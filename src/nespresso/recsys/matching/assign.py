@@ -25,6 +25,9 @@ def MatchUsers(chat_ids: list[int]) -> list[Pair]:
     users: list[User] = [User(chat_id, RandomEmoji()) for chat_id in chat_ids]
     assigned = users.copy()
 
+    if not assigned:
+        return []
+
     # 1/3 chance of success
     while True:
         random.shuffle(assigned)
