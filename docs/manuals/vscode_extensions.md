@@ -4,7 +4,7 @@ This file lists the recommended VS Code extensions for working on the project.
 
 ---
 
-## 🐍 Python Development
+## Python Development
 
 | Extension | ID | Description |
 |----------|----|-------------|
@@ -15,7 +15,7 @@ This file lists the recommended VS Code extensions for working on the project.
 
 ---
 
-## ⚙️ Configuration and TOML Support
+## Configuration and TOML Support
 
 | Extension | ID | Description |
 |----------|----|-------------|
@@ -23,7 +23,7 @@ This file lists the recommended VS Code extensions for working on the project.
 
 ---
 
-## 🔐 Environment Variables
+## Environment Variables
 
 | Extension | ID | Description |
 |----------|----|-------------|
@@ -31,7 +31,7 @@ This file lists the recommended VS Code extensions for working on the project.
 
 ---
 
-## ✍️ Markdown & Diagrams
+## Markdown & Diagrams
 
 | Extension | ID | Description |
 |----------|----|-------------|
@@ -41,7 +41,7 @@ This file lists the recommended VS Code extensions for working on the project.
 
 ---
 
-## ✅ Writing Support
+## Writing Support
 
 | Extension | ID | Description |
 |----------|----|-------------|
@@ -49,7 +49,7 @@ This file lists the recommended VS Code extensions for working on the project.
 
 ---
 
-## 🐳 Remote & Containerized Dev
+## Remote & Containerized Dev
 
 | Extension | ID | Description |
 |----------|----|-------------|
