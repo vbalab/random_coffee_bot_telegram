@@ -34,12 +34,6 @@ ruff check src/ tests/ --fix
 mypy src/ tests/
 ```
 
-### Run Tests
-
-```bash
-pytest
-```
-
 ## Launch Bot
 
 Be sure to have `.env` file similar to `.env.example`
