@@ -6,6 +6,7 @@ from nespresso.api.request import (
 
 sample_nes_ids = [*range(1, 200)]
 
+
 async def FindSomeNesUsers():
     for nes_id in sample_nes_ids:
         await AllowDataSharingPermission(nes_id)

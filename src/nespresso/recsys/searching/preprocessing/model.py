@@ -3,6 +3,8 @@ from sentence_transformers import SentenceTransformer
 
 from nespresso.core.configs.paths import DIR_EMBEDDING
 
+# TODO: change
+
 TOKEN_LEN = 384
 EMBEDDING_LEN = 768
 

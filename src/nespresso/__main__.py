@@ -1,6 +1,5 @@
 import asyncio
 
-from nespresso.api.TEMP import FindSomeNesUsers  # TODO: delete
 from nespresso.bot.handlers.admin.register import RegisterAdminHandlers
 from nespresso.bot.handlers.client.email.verification import TestEmail  # TODO
 from nespresso.bot.handlers.client.register import RegisterClientHandlers
@@ -67,7 +66,7 @@ async def main() -> None:
 
     await TestEmail()
 
-    await FindSomeNesUsers()
+    # await FindSomeNesUsers()
 
     await dp.start_polling(bot, drop_pending_updates=True)
 

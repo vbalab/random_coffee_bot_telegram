@@ -1,9 +1,8 @@
 import logging
-from collections.abc import Sequence
 from typing import Any
 
 import httpx
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 
 from nespresso.core.configs.settings import settings
 from nespresso.db.models.nes_user import NesUser
@@ -18,85 +17,12 @@ def _NesUserPydanticToSQLAlchemy(instance: NesUserIn) -> NesUser:
     return NesUser(**raw)
 
 
-def _FormatScalarFields(user: NesUserIn) -> list[str]:
-    labels = {
-        "Name": user.name,
-        "City": user.city,
-        "Region": user.region,
-        "Country": user.country,
-        "Program": user.program,
-        "Class": user.class_name,
-    }
-
-    return [f"{label} – {val}" for label, val in labels.items() if val]
-
-
-def _FormatListFields(user: NesUserIn) -> list[str]:
-    labels = {
-        "Hobbies": user.hobbies,
-        "Industry expertise": user.industry_expertise,
-        "Country expertise": user.country_expertise,
-        "Professional expertise": user.professional_expertise,
-    }
-
-    return [f"{label} – {', '.join(vals)}" for label, vals in labels.items() if vals]
-
-
-def _FormatModelSection(
-    label: str,
-    models: BaseModel | Sequence[BaseModel] | None,
-) -> str | None:
-    if not models:
-        return None
-
-    if isinstance(models, BaseModel):
-        items: Sequence[BaseModel] = [models]
-    else:
-        items = models
-
-    entries: list[str] = []
-    for m in items:
-        data = m.model_dump()
-        parts = [f"{k} – {v}" for k, v in data.items() if v is not None]
-
-        if parts:
-            entries.append(", ".join(parts))
-
-    if not entries:
-        return None
-
-    sub = "\n".join(f"  – {e}" for e in entries)
-    return f"{label}:\n{sub}"
-
-
-def _GetNesUserModelText(nes_user: NesUserIn) -> str:
-    sections: list[str] = []
-    sections += _FormatScalarFields(nes_user)
-    sections += _FormatListFields(nes_user)
-
-    main_work = _FormatModelSection("Main work", nes_user.main_work)
-    if main_work:
-        sections.append(main_work)
-
-    for label, attr in [
-        ("Additional work", nes_user.additional_work),
-        ("Pre-NES education", nes_user.pre_nes_education),
-        ("Post-NES education", nes_user.post_nes_education),
-    ]:
-        section = _FormatModelSection(label, attr)
-        if section:
-            sections.append(section)
-
-    return ".\n".join(sections)
-
-
 async def _FetchNesUserData(nes_id: int) -> dict[str, Any]:
     base_url = settings.NES_API_BASE_URL.rstrip("/")
     url = f"{base_url}/user/{nes_id}"
 
     async with httpx.AsyncClient() as client:
         response = await client.get(url, headers={"accept": "application/json"})
-
     try:
         response.raise_for_status()
     except httpx.HTTPStatusError:
@@ -123,12 +49,16 @@ async def GetNesUserFromMyNES(nes_id: int) -> NesUserIn:
         # raise TODO
 
     alchemy_nes_user = _NesUserPydanticToSQLAlchemy(nes_user)
+
+    logging.info(
+        f"MyNES info for `nes_id={nes_id}` synced from API.",
+        extra={"nes_id": nes_user.nes_id},
+    )
+
     ctx = await GetUserContextService()
     await ctx.UpsertNesUser(alchemy_nes_user)
 
-    logging.info(f"MyNES info for `nes_id={nes_id}` synced from API.", extra={"nes_id": nes_user.nes_id})
-
-    text = _GetNesUserModelText(nes_user)
+    text = alchemy_nes_user.FullDescription()
     await UpsertTextOpenSearch(
         nes_id=nes_user.nes_id,
         side=DocSide.mynes,

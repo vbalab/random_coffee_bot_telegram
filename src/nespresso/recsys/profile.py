@@ -9,19 +9,21 @@ from nespresso.db.services.user_context import GetUserContextService
 @dataclass
 class Profile:
     nes_id: int
-    name: str
     username: str
     phone_number: str
     email: str
     about: str
+    nes_self: str
+    nes_work: str
 
     @classmethod
     async def FromNesId(cls, nes_id: int) -> Profile:
-        name = "-/-"
-        username = "[doesn't use bot]"
-        phone_number = "-/-"
-        email = "-/-"
-        about = "[no self description]"
+        username = None
+        phone_number = None
+        email = None
+        about = None
+        nes_self = None
+        nes_work = None
 
         ctx = await GetUserContextService()
         chat_id = await ctx.GetTgChatIdBy(nes_id)
@@ -41,26 +43,29 @@ class Profile:
                     email = tg_user.nes_email
 
         if nes_user := await ctx.GetNesUser(nes_id=nes_id):
-            if nes_user.name:
-                name = nes_user.name
+            nes_self = nes_user.SelfDescription()
+            nes_work = nes_user.WorkDescription()
 
-        # TODO: add programm'year and format. For that need to see the data.
+        # TODO: add programm'year and format.
 
         return cls(
             nes_id=nes_id,
-            name=name,
             username=username,
             phone_number=phone_number,
             email=email,
             about=about,
+            nes_self=nes_self,
+            nes_work=nes_work,
         )
 
     def DescribeProfile(self) -> str:
         text = ""
-        text += f"{self.name}\n"
-        text += f"tg: {self.username}\n"
-        text += f"phone: {self.phone_number}\n"
-        text += f"email: {self.email}\n\n"
-        text += f"{self.about}"
+        text += f"@{self.username}\n" if self.username else ""
+        text += f"{self.phone_number}" if self.phone_number else ""
+        text += ", " if self.email else "\n\n"
+        text += f"{self.email}\n\n" if self.email else ""
+        text += f"About:\n{self.about}\n\n"
+        text += f"{self.nes_self}\n\n" if self.nes_self else ""
+        text += f"{self.nes_work}\n\n" if self.nes_work else ""
 
         return text
