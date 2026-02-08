@@ -158,10 +158,14 @@ class NesUser(Base):
                 data = m
             else:
                 data = m.model_dump()
-            parts = [str(value) for value in data.values() if value]
+            
+            parts = []
+            for key, value in data.items():
+                if key in ["company", "department", "position"] and value:
+                    parts.append(value)
 
             if parts:
-                entries.append("\n   ".join(parts))
+                entries.append(",\n     ".join(parts))
 
         if not entries:
             return None
@@ -173,10 +177,13 @@ class NesUser(Base):
     def SelfDescription(self) -> str:
         text = ""
         text += f"{self.name}\n" if self.name else ""
-        text += f"{self.city}," if self.city else ""
-        text += f"{self.region}," if self.region else ""
+        text += "[" if self.city or self.region or self.country else ""
+        text += f"{self.city}" if self.city else ""
+        text += f", " if self.city and (self.region or self.country) else ""
+        text += f"{self.region}" if self.region else ""
+        text += f", " if self.region and self.country else ""
         text += f"{self.country}" if self.country else ""
-        text += "\n" if self.city or self.region or self.country else ""
+        text += "]\n" if self.city or self.region or self.country else ""
         text += (
             f"{self.program}'{self.class_name}\n"
             if self.program and self.class_name

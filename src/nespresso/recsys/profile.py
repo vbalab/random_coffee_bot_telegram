@@ -60,12 +60,15 @@ class Profile:
 
     def DescribeProfile(self) -> str:
         text = ""
-        text += f"@{self.username}\n" if self.username else ""
-        text += f"{self.phone_number}" if self.phone_number else ""
-        text += ", " if self.email else "\n\n"
-        text += f"{self.email}\n\n" if self.email else ""
-        text += f"About:\n{self.about}\n\n"
         text += f"{self.nes_self}\n\n" if self.nes_self else ""
+
+        text += f"@{self.username}\n" if self.username else ""
+        text += f"{self.phone_number}\n" if self.phone_number else ""
+        text += f"{self.email}\n" if self.email else ""
+        text += "\n" if self.username or self.phone_number or self.email else ""
+
+        text += f"About:\n{self.about}\n\n" if self.about else ""
+
         text += f"{self.nes_work}\n\n" if self.nes_work else ""
 
         return text
