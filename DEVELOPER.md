@@ -1,42 +1,33 @@
 # Notes for Developers
 
-## Setup
+## Setup Via Local Environment
 
-See the [recommended VS Code extensions](vscode_extensions.md) for a better dev experience.
-
-### Via Local Environment
+See the [recommended VSCode extensions](vscode_extensions.md) for a better dev experience.
 
 Being in repository directory:
 
 ```bash
-python -m venv venv
+python3.12 -m venv venv
 vim venv/bin/activate
 # Then add line at the end of file: export PYTHONPATH="$VIRTUAL_ENV/../src"
 
 source venv/bin/activate
-
 pip install --no-cache-dir -r requirements.txt -r requirements-dev.txt
 ```
 
 ## Pre-Commit Actions
 
-### Format & Lint
+Format & Lint & Type Check:
 
 ```bash
 black src/ tests/
-
 ruff check src/ tests/ --fix
-```
-
-### Type Check
-
-```bash
 mypy src/ tests/
 ```
 
-## Launch Bot
+## Bot Launch
 
-Be sure to have `.env` file similar to `.env.example`
+Be sure to have `.env` file similar to `.env.example`.
 
 Being in repository directory, give permissions:
 
@@ -51,7 +42,11 @@ sudo systemctl start docker
 
 docker compose build #--no-cache
 docker compose up --detach --remove-orphans
+```
 
+Commands to stop:
+
+```bash
 docker compose stop
 docker compose down
 ```
@@ -60,37 +55,22 @@ Note that the bot started in docker _synchronizes_ Postgres DB & logs with local
 
 ### View logs
 
-You can view logs from docker via:
+You can view logs
 
-```bash
-docker compose logs -f bot
-docker compose logs -f <bot/api/db/opensearch>
-```
+- from docker via:
 
-Or logs in files at `./data/logs` path locally.
+    ```bash
+    docker compose logs -f bot
+    docker compose logs -f <bot/api/db/opensearch>
+    ```
+
+- in files at `./data/logs` path locally
 
 ### Enter container
 
 ```bash
 docker compose run -it bot bash
 docker compose run -it <bot/api/db/opensearch> bash
-```
-
-## Scripts
-
-### ChatGPT-related
-
-Simple recursive script to walk through files and concatenate their contents with headers.
-
-```bash
-python scripts/combine_files.py
-```
-
-Additionally, you can use `tree` to show ChatGPT project's structure:
-
-```bash
-tree src/
-tree -I '.vscode|__pycache__|*cache|venv|data|code_combined.txt|try' --prune
 ```
 
 ---

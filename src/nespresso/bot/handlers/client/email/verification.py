@@ -3,6 +3,7 @@ import secrets
 from email.message import EmailMessage
 
 import aiosmtplib
+from aiosmtplib import SMTPAuthenticationError
 
 from nespresso.core.configs.settings import settings
 
@@ -40,37 +41,28 @@ async def SendCode(email: str, code: int) -> None:
     logging.info(f"Sending code '{code}' to '{email}'")
 
 
-# async def TestEmail() -> None:
-#     logging.info("### Checking emails ... ###")
+async def TestEmail() -> None:
+    logging.info("### Checking emails ... ###")
 
-#     failed_emails = []
+    try:
+        message = EmailMessage()
+        message["Subject"] = "Проверка работоспособности (NEScafeBot)"
+        message["From"] = _EMAIL_ADDRESS
+        message["To"] = "vbalabaev@nes.ru"
+        message.set_content("Почта работает.")
 
-#     for email_sender in emails:
-#         try:
-#             message = EmailMessage()
-#             message["Subject"] = "Проверка работоспособности (NEScafeBot)"
-#             message["From"] = email_sender["email"]
-#             message["To"] = "vbalabaev@nes.ru"
-#             message.set_content("Почта работает.")
+        await aiosmtplib.send(
+            message,
+            username=_EMAIL_ADDRESS,
+            password=_EMAIL_PASSWORD,
+            hostname=_SMTP_HOST,
+            port=_SMTP_PORT,
+            start_tls=True,
+        )
 
+    except SMTPAuthenticationError:
+        logging.warning(
+            f"process='email test' !! Email \"{_EMAIL_ADDRESS}\" is not working."
+        )
 
-#             await aiosmtplib.send(
-#                 message,
-#                 username=email_sender["email"],
-#                 password=email_sender["password"],
-#                 hostname="smtp.gmail.com",
-#                 port=587,
-#                 start_tls=True,
-#             )
-
-#         except SMTPAuthenticationError:
-#             logging.warning(f"process='email test' !! Email \"{email_sender['email']}\" is not working.")
-
-#             await send_to_admins(f"WARNING: Email \"{email_sender['email']}\" is not working")
-
-#             failed_emails.append(email_sender)
-
-#     for email_sender in failed_emails:
-#         emails.remove(email_sender);
-
-#     logging.info("### Emails have been checked! ###")
+    logging.info("### Emails have been checked! ###")
