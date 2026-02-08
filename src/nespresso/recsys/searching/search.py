@@ -46,7 +46,7 @@ class Page:
     def GetFormattedText(self) -> str:
         if not self.final_text:
             self.final_text = (
-                f"[Page: {self.number}]\n\n{self.profile.DescribeProfile()}"
+                f"`[Page: {self.number}]`\n\n{self.profile.DescribeProfile()}"
             )
 
         return self.final_text

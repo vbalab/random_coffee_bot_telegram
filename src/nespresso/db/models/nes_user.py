@@ -111,6 +111,7 @@ class NesUser(Base):
         if not entries:
             return None
 
+        entries = list(set(entries))
         sub = "\n".join(f"  – {e}" for e in entries)
 
         return f"{label}:\n{sub}"
@@ -170,6 +171,7 @@ class NesUser(Base):
         if not entries:
             return None
 
+        entries = list(set(entries))
         sub = "\n\n".join(f"  – {e}" for e in entries)
 
         return f"{label}:\n{sub}"
@@ -177,13 +179,16 @@ class NesUser(Base):
     def SelfDescription(self) -> str:
         text = ""
         text += f"{self.name}\n" if self.name else ""
+        
         text += "[" if self.city or self.region or self.country else ""
         text += f"{self.city}" if self.city else ""
-        text += f", " if self.city and (self.region or self.country) else ""
-        text += f"{self.region}" if self.region else ""
-        text += f", " if self.region and self.country else ""
+        text += f", " if self.city and ((self.region and (self.city != self.region)) or self.country) else ""
+        if self.city != self.region:
+            text += f"{self.region}" if self.region else ""
+            text += f", " if self.region and self.country else ""
         text += f"{self.country}" if self.country else ""
         text += "]\n" if self.city or self.region or self.country else ""
+        
         text += (
             f"{self.program}'{self.class_name}\n"
             if self.program and self.class_name

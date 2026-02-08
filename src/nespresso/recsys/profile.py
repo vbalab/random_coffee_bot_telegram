@@ -69,6 +69,6 @@ class Profile:
 
         text += f"About:\n{self.about}\n\n" if self.about else ""
 
-        text += f"{self.nes_work}\n\n" if self.nes_work else ""
+        text += f"{self.nes_work}" if self.nes_work else ""
 
         return text
