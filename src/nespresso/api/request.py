@@ -104,7 +104,7 @@ async def _FetchNesUserData(nes_id: int) -> dict[str, Any]:
             "Failed to fetch NES user data.",
             extra={"nes_id": nes_id, "status_code": response.status_code},
         )
-        raise
+        # raise TODO
 
     return response.json()
 
@@ -160,7 +160,7 @@ async def _SetDataSharingPermission(nes_id: int, permission: bool) -> None:
                 "status_code": response.status_code,
             },
         )
-        raise
+        # raise TODO
 
     logging.info(
         f"MyNES data sharing permission for `nes_id={nes_id}` updated to `{permission}`.",
