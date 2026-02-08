@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     POSTGRES_DSN: SecretStr  # Data Source Name, e.g. postgresql+asyncpg://user:pass@localhost/dbname
 
     OPENSEARCH_INITIAL_ADMIN_PASSWORD: SecretStr
+    NES_API_BASE_URL: str = "https://my.nes.ru/new-api-2"
 
     model_config = SettingsConfigDict(env_file=PATH_ENV, env_file_encoding="utf-8")
 
