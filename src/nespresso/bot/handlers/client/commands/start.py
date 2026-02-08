@@ -150,13 +150,6 @@ async def CommandStartEmailConfirm(message: types.Message, state: FSMContext) ->
         )
         return
 
-    ctx = await GetUserContextService()
-    await ctx.UpdateTgUser(
-        chat_id=message.chat.id,
-        column=TgUser.verified,
-        value=True,
-    )
-
     await SendMessage(
         chat_id=message.chat.id,
         text="✅ Thank you!",
@@ -177,20 +170,26 @@ async def CommandStartEmailConfirm(message: types.Message, state: FSMContext) ->
     await state.set_data({"button_text": button.text})
 
 
-@router.message(StateFilter(StartStates.EmailConfirm), F.content_type == "text")
+@router.message(StateFilter(StartStates.Terms), F.content_type == "text")
 async def CommandStartTerms(message: types.Message, state: FSMContext) -> None:
     assert message.text is not None
 
     data = await state.get_data()
-    button_text = data["button_text"]
 
-    if message.text != button_text:
+    if message.text != data["button_text"]:
         await SendMessage(
             chat_id=message.chat.id,
             text="❌ Please confirm the Terms of Service by clicking `📄 Yes, I accept`\nWithout it you are not allowed to use the service.\n\nIf the button menu is hidden, click the 🎛 icon in the lower right corner",
             context=ContextIO.UserFailed,
         )
         return
+
+    ctx = await GetUserContextService()
+    await ctx.UpdateTgUser(
+        chat_id=message.chat.id,
+        column=TgUser.verified,
+        value=True,
+    )
 
     await SendMessage(
         chat_id=message.chat.id,

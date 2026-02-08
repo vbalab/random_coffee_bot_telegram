@@ -15,3 +15,4 @@ ENV PYTHONPATH=/usr/src/app/src
 
 COPY .env ./
 COPY src/ src/
+COPY docs/ docs/
