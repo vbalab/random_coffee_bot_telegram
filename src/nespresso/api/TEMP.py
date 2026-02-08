@@ -4,24 +4,7 @@ from nespresso.api.request import (
     GetNesUserFromMyNES,
 )
 
-sample_nes_ids = [
-    1,
-    11,
-    111,
-    1111,
-    11111,
-    111111,
-    1111111,
-    11111111,
-    111111111,
-    1111111111,
-    11111111111,
-    111111111111,
-    1111111111111,
-    11111111111111,
-    111111111111111,
-]
-
+sample_nes_ids = list(*range(200))
 
 async def FindSomeNesUsers():
     for nes_id in sample_nes_ids:

@@ -125,6 +125,8 @@ async def GetNesUserFromMyNES(nes_id: int) -> NesUserIn:
     ctx = await GetUserContextService()
     await ctx.UpsertNesUser(alchemy_nes_user)
 
+    logging.info(f"MyNES info for `nes_id={nes_id}` synced from API.", extra={"nes_id": nes_user.nes_id})
+
     text = _GetNesUserModelText(nes_user)
     await UpsertTextOpenSearch(
         nes_id=nes_user.nes_id,
@@ -132,7 +134,6 @@ async def GetNesUserFromMyNES(nes_id: int) -> NesUserIn:
         text=text,
     )
 
-    logging.info("NES user synced from API.", extra={"nes_id": nes_user.nes_id})
     return nes_user
 
 
@@ -162,7 +163,7 @@ async def _SetDataSharingPermission(nes_id: int, permission: bool) -> None:
         raise
 
     logging.info(
-        "Data sharing permission updated.",
+        f"MyNES data sharing permission for `nes_id={nes_id}` updated to `{permission}`.",
         extra={"nes_id": nes_id, "permission": permission},
     )
 
