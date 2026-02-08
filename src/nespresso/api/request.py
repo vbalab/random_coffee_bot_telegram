@@ -119,7 +119,8 @@ async def GetNesUserFromMyNES(nes_id: int) -> NesUserIn:
             "Failed to parse NES user data.",
             extra={"nes_id": nes_id, "payload": data},
         )
-        raise
+        return
+        # raise TODO
 
     alchemy_nes_user = _NesUserPydanticToSQLAlchemy(nes_user)
     ctx = await GetUserContextService()
