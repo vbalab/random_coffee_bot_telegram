@@ -42,5 +42,3 @@ class Tags(Enum):
 
 
 app.include_router(nes_user.router, prefix="/user", tags=[Tags.users])
-
-# TODO: Protect /docs with FastAPI

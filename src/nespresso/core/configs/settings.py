@@ -19,8 +19,6 @@ class Settings(BaseSettings):
 
     OPENSEARCH_INITIAL_ADMIN_PASSWORD: SecretStr
 
-    MYNES_TOKEN: SecretStr
-
     model_config = SettingsConfigDict(env_file=PATH_ENV, env_file_encoding="utf-8")
 
 

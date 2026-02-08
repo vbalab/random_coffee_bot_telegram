@@ -1,17 +1,26 @@
-import httpx
+...
+from nespresso.api.processing import NesUserPydanticToSQLAlchemy, GetNesUserModelText, UpsertTextOpenSearch, DocSide
+from nespresso.db.models.nes_user import NesUser
+from nespresso.db.models.schemas.nes_user import NesUserIn
+from nespresso.db.services.user_context import GetUserContextService
+from nespresso.recsys.searching.document import UpsertTextOpenSearch
+from nespresso.recsys.searching.index import DocSide
+
+...
 
 
-async def TriggerFetchByNesEmail(email: str) -> None:
-    async with httpx.AsyncClient() as client:
-        response = await client.get(
-            url="https://external.mynes.ru/api/trigger_fetch",
-            params={"email": email},
-            headers={"Authorization": "..."},
-        )
-        # response = await client.post(
-        #     "https://external.nes.ru/api/trigger_fetch",
-        #     json={"email": email},
-        #     headers={"Authorization": "..."}
-        # )
+# TODO: function 1 that takes nes_id, does GET request, gets info and does like the following:
+#nes_user: NesUserIn
+# alchemy_nes_user: NesUser = NesUserPydanticToSQLAlchemy(nes_user)
+# ctx = await GetUserContextService()
+# await ctx.UpsertNesUser(alchemy_nes_user)
+# text = GetNesUserModelText(nes_user)
+# await UpsertTextOpenSearch(
+#     nes_id=nes_user.nes_id,
+#     side=DocSide.mynes,
+#     text=text,
+# )
 
-        response.raise_for_status()
+# TODO: function 2 that takes nes_id and makes POST setting permission to True
+
+# TODO: function 3 that takes nes_id and makes POST setting permission to False
