@@ -158,7 +158,7 @@ class NesUser(Base):
                 data = m
             else:
                 data = m.model_dump()
-            parts = data.values()
+            parts = [str(value) for value in data.values() if value]
 
             if parts:
                 entries.append("\n   ".join(parts))
