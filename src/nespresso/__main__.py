@@ -63,7 +63,7 @@ async def main() -> None:
     dp.shutdown.register(OnShutdown)
 
     SetExceptionHandlers()
-    TestEmail()
+    await TestEmail()
     await dp.start_polling(bot, drop_pending_updates=True)
 
 
