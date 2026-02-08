@@ -61,6 +61,7 @@ async def TestEmail() -> None:
         )
 
     except SMTPAuthenticationError as e:
+        # TODO
         logging.error(e)
         logging.warning(
             f"process='email test' !! Email \"{_EMAIL_ADDRESS}\" is not working."
