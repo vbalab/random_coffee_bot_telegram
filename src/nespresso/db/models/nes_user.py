@@ -94,10 +94,15 @@ class NesUser(Base):
 
         if not isinstance(models, list):
             items = [models]
+        else:
+            items = models
 
         entries: list[str] = []
         for m in items:
-            data = m.model_dump()
+            if isinstance(m, dict):
+                data = m
+            else:
+                data = m.model_dump()
             parts = [f"{k}: {v}" for k, v in data.items() if v]
 
             if parts:
@@ -144,10 +149,15 @@ class NesUser(Base):
 
         if not isinstance(models, list):
             items = [models]
+        else:
+            items = models
 
         entries: list[str] = []
         for m in items:
-            data = m.model_dump()
+            if isinstance(m, dict):
+                data = m
+            else:
+                data = m.model_dump()
             parts = data.values()
 
             if parts:
