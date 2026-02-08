@@ -22,7 +22,7 @@ from nespresso.recsys.matching.schedule import (
 )
 from nespresso.recsys.searching.client import CloseOpenSearchClient
 from nespresso.recsys.searching.index import EnsureOpenSearchIndex
-from nespresso.bot.handlers.client.email import TestEmail
+from nespresso.bot.handlers.client.email.verification import TestEmail
 
 
 async def EnsureDependencies() -> None:

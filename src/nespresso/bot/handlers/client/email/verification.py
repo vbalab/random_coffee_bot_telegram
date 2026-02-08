@@ -60,7 +60,8 @@ async def TestEmail() -> None:
             start_tls=True,
         )
 
-    except SMTPAuthenticationError:
+    except SMTPAuthenticationError as e:
+        logging.error(e)
         logging.warning(
             f"process='email test' !! Email \"{_EMAIL_ADDRESS}\" is not working."
         )
