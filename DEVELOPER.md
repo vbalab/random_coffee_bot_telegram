@@ -20,9 +20,9 @@ pip install --no-cache-dir -r requirements.txt -r requirements-dev.txt
 Format & Lint & Type Check:
 
 ```bash
-black src/ tests/
-ruff check src/ tests/ --fix
-mypy src/ tests/
+black src/
+ruff check src/ --fix
+mypy src/
 ```
 
 ## Bot Launch
@@ -55,16 +55,14 @@ Note that the bot started in docker _synchronizes_ Postgres DB & logs with local
 
 ### View logs
 
-You can view logs
+You can view logs from docker via:
 
-- from docker via:
+```bash
+docker compose logs -f bot
+docker compose logs -f <bot/api/db/opensearch>
+```
 
-    ```bash
-    docker compose logs -f bot
-    docker compose logs -f <bot/api/db/opensearch>
-    ```
-
-- in files at `./data/logs` path locally
+or in files at `./data/logs` path locally.
 
 ### Enter container
 

@@ -1,15 +1,4 @@
-import logging
-from collections.abc import Sequence
-from typing import Annotated
-
-from fastapi import APIRouter, Body, status
-from pydantic import BaseModel
-
-from nespresso.db.models.nes_user import NesUser
-from nespresso.db.models.schemas.nes_user import NesUserIn, NesUserOut
-from nespresso.db.services.user_context import GetUserContextService
-from nespresso.recsys.searching.document import UpsertTextOpenSearch
-from nespresso.recsys.searching.index import DocSide
+from fastapi import APIRouter
 
 router = APIRouter()
 

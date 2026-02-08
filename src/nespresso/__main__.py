@@ -1,6 +1,8 @@
 import asyncio
 
+from nespresso.api.TEMP import FindSomeNesUsers  # TODO: delete
 from nespresso.bot.handlers.admin.register import RegisterAdminHandlers
+from nespresso.bot.handlers.client.email.verification import TestEmail  # TODO
 from nespresso.bot.handlers.client.register import RegisterClientHandlers
 from nespresso.bot.handlers.common.register import (
     RegisterHandlerCancel,
@@ -22,7 +24,6 @@ from nespresso.recsys.matching.schedule import (
 )
 from nespresso.recsys.searching.client import CloseOpenSearchClient
 from nespresso.recsys.searching.index import EnsureOpenSearchIndex
-from nespresso.bot.handlers.client.email.verification import TestEmail
 
 
 async def EnsureDependencies() -> None:
@@ -63,7 +64,11 @@ async def main() -> None:
     dp.shutdown.register(OnShutdown)
 
     SetExceptionHandlers()
+
     await TestEmail()
+
+    await FindSomeNesUsers()
+
     await dp.start_polling(bot, drop_pending_updates=True)
 
 

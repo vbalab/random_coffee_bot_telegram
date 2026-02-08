@@ -1,18 +1,96 @@
 import logging
+from collections.abc import Sequence
 from typing import Any
 
 import httpx
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
-from nespresso.api.processing import GetNesUserModelText, NesUserPydanticToSQLAlchemy
 from nespresso.core.configs.settings import settings
+from nespresso.db.models.nes_user import NesUser
 from nespresso.db.models.schemas.nes_user import NesUserIn
 from nespresso.db.services.user_context import GetUserContextService
 from nespresso.recsys.searching.document import UpsertTextOpenSearch
 from nespresso.recsys.searching.index import DocSide
 
 
-async def FetchNesUserData(nes_id: int) -> dict[str, Any]:
+def _NesUserPydanticToSQLAlchemy(instance: NesUserIn) -> NesUser:
+    raw = instance.model_dump(mode="json", exclude_unset=True)
+    return NesUser(**raw)
+
+
+def _FormatScalarFields(user: NesUserIn) -> list[str]:
+    labels = {
+        "Name": user.name,
+        "City": user.city,
+        "Region": user.region,
+        "Country": user.country,
+        "Program": user.program,
+        "Class": user.class_name,
+    }
+
+    return [f"{label} – {val}" for label, val in labels.items() if val]
+
+
+def _FormatListFields(user: NesUserIn) -> list[str]:
+    labels = {
+        "Hobbies": user.hobbies,
+        "Industry expertise": user.industry_expertise,
+        "Country expertise": user.country_expertise,
+        "Professional expertise": user.professional_expertise,
+    }
+
+    return [f"{label} – {', '.join(vals)}" for label, vals in labels.items() if vals]
+
+
+def _FormatModelSection(
+    label: str,
+    models: BaseModel | Sequence[BaseModel] | None,
+) -> str | None:
+    if not models:
+        return None
+
+    if isinstance(models, BaseModel):
+        items: Sequence[BaseModel] = [models]
+    else:
+        items = models
+
+    entries: list[str] = []
+    for m in items:
+        data = m.model_dump()
+        parts = [f"{k} – {v}" for k, v in data.items() if v is not None]
+
+        if parts:
+            entries.append(", ".join(parts))
+
+    if not entries:
+        return None
+
+    sub = "\n".join(f"  – {e}" for e in entries)
+    return f"{label}:\n{sub}"
+
+
+def _GetNesUserModelText(nes_user: NesUserIn) -> str:
+    sections: list[str] = []
+    sections += _FormatScalarFields(nes_user)
+    sections += _FormatListFields(nes_user)
+
+    main_work = _FormatModelSection("Main work", nes_user.main_work)
+    if main_work:
+        sections.append(main_work)
+
+    for label, attr in [
+        ("Additional work", nes_user.additional_work),
+        ("Pre-NES education", nes_user.pre_nes_education),
+        ("Post-NES education", nes_user.post_nes_education),
+    ]:
+        section = _FormatModelSection(label, attr)
+        if section:
+            sections.append(section)
+
+    return ".\n".join(sections)
+
+
+async def _FetchNesUserData(nes_id: int) -> dict[str, Any]:
     base_url = settings.NES_API_BASE_URL.rstrip("/")
     url = f"{base_url}/user/{nes_id}"
 
@@ -31,8 +109,8 @@ async def FetchNesUserData(nes_id: int) -> dict[str, Any]:
     return response.json()
 
 
-async def SyncNesUserFromApi(nes_id: int) -> NesUserIn:
-    data = await FetchNesUserData(nes_id)
+async def GetNesUserFromMyNES(nes_id: int) -> NesUserIn:
+    data = await _FetchNesUserData(nes_id)
 
     try:
         nes_user = NesUserIn.model_validate(data)
@@ -43,11 +121,11 @@ async def SyncNesUserFromApi(nes_id: int) -> NesUserIn:
         )
         raise
 
-    alchemy_nes_user = NesUserPydanticToSQLAlchemy(nes_user)
+    alchemy_nes_user = _NesUserPydanticToSQLAlchemy(nes_user)
     ctx = await GetUserContextService()
     await ctx.UpsertNesUser(alchemy_nes_user)
 
-    text = GetNesUserModelText(nes_user)
+    text = _GetNesUserModelText(nes_user)
     await UpsertTextOpenSearch(
         nes_id=nes_user.nes_id,
         side=DocSide.mynes,
@@ -58,7 +136,7 @@ async def SyncNesUserFromApi(nes_id: int) -> NesUserIn:
     return nes_user
 
 
-async def SetDataSharingPermission(nes_id: int, permission: bool) -> None:
+async def _SetDataSharingPermission(nes_id: int, permission: bool) -> None:
     base_url = settings.NES_API_BASE_URL.rstrip("/")
     url = f"{base_url}/data-sharing-permission"
     payload = {"nes_id": nes_id, "permission": permission}
@@ -90,8 +168,8 @@ async def SetDataSharingPermission(nes_id: int, permission: bool) -> None:
 
 
 async def AllowDataSharingPermission(nes_id: int) -> None:
-    await SetDataSharingPermission(nes_id, True)
+    await _SetDataSharingPermission(nes_id, True)
 
 
 async def DenyDataSharingPermission(nes_id: int) -> None:
-    await SetDataSharingPermission(nes_id, False)
+    await _SetDataSharingPermission(nes_id, False)
