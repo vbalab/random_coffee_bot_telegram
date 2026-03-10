@@ -1,0 +1,38 @@
+{
+  "language.choose": "Please choose your language:",
+  "language.english": "🇬🇧 English",
+  "language.russian": "🇷🇺 Русский",
+  "language.unsupported": "❌ Please choose a language using the buttons below.",
+  "language.selected": "✅ Language set to English.",
+
+  "start.already_registered": "You've already registered!",
+  "start.share_contact": "Please share your contact with us\n\nIf the button menu is hidden, click the 🎛 icon in the lower right corner",
+  "start.share_contact_button": "📱 Share my contact",
+  "start.contact_missing": "❌ Please share your phone number using the button below.\n\nIf the button menu is hidden, click the 🎛 icon in the lower right corner",
+  "start.contact_unavailable": "❌ Could not retrieve your phone number since you're not a telegram user.\nPlease try again from your user profile",
+  "start.contact_foreign": "❌ You sent someone else's phone number.\nPlease share your own number.\n\nIf the button menu is hidden, click the 🎛 icon in the lower right corner",
+  "common.thanks": "✅ Thank you!",
+  "start.enter_email": "Please enter your NES alumni e-mail to continue",
+  "start.email_invalid": "An email should have '@nes.ru' in it",
+  "start.sending_code": "Sending a code.\nPlease wait",
+  "start.sent_code": "We've sent you a code.\nPlease provide it here",
+  "start.code_invalid": "The code is incorrect.\nPlease try again",
+  "start.accept_button": "📄 Yes, I accept",
+  "start.terms_caption": "Read the terms of the User Agreement and confirm your consent to the processing of personal information in the Terms of Service by clicking `📄 Yes, I accept`\n\nIf the button menu is hidden, click the 🎛 icon in the lower right corner",
+  "start.terms_not_accepted": "❌ Please confirm the Terms of Service by clicking `📄 Yes, I accept`\nWithout it you are not allowed to use the service.\n\nIf the button menu is hidden, click the 🎛 icon in the lower right corner",
+  "start.verified": "🎉 You've become a verified user with full access to bot's functionality!",
+  "start.about": "Let me tell you more about the bot\n...",
+
+  "find.only_registered": "Only registered users can use /find",
+  "find.enter_query": "Type text for query of person you wish to find",
+  "find.too_long": "Your text is too long.\nPlease, reduce it by {percent}%",
+  "find.searching": "Doing search.\nPlease, wait",
+  "find.not_found": "Found nothing",
+  "find.search_expired": "Search is expired",
+  "find.no_more_pages": "No more pages",
+
+  "common.canceled": "Canceled",
+  "zero.not_in_command": "You're not in a command right now.\nPick something from the Menu",
+  "zero.not_text_idle": "The bot only works with text messages.\nPick something from the Menu",
+  "zero.not_text_in_state": "The bot only works with text messages\nTry again"
+}

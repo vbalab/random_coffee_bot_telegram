@@ -11,6 +11,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from nespresso.bot.lib.message.checks import CheckVerified
+from nespresso.bot.lib.message.i18n import t_user
 from nespresso.bot.lib.message.io import ContextIO, SendMessage
 from nespresso.recsys.searching.preprocessing.embedding import CalculateTokenLen
 from nespresso.recsys.searching.preprocessing.model import TOKEN_LEN
@@ -74,13 +75,13 @@ async def CommandFind(message: types.Message, state: FSMContext) -> None:
     if not await CheckVerified(chat_id=message.chat.id):
         await SendMessage(
             chat_id=message.chat.id,
-            text="Only registered users can use /find",
+            text=await t_user(message.chat.id, "find.only_registered"),
         )
         return
 
     await SendMessage(
         chat_id=message.chat.id,
-        text="Type text for query of person you wish to find",
+        text=await t_user(message.chat.id, "find.enter_query"),
     )
     await state.set_state(FindStates.Text)
 
@@ -92,15 +93,18 @@ async def CommandFindText(message: types.Message, state: FSMContext) -> None:
     if CalculateTokenLen(message.text) > TOKEN_LEN:
         await SendMessage(
             chat_id=message.chat.id,
-            text="Your text is too long.\n"
-            f"Please, reduce it by {PercentageToReduce(message.text)}%",
+            text=await t_user(
+                message.chat.id,
+                "find.too_long",
+                percent=PercentageToReduce(message.text),
+            ),
             context=ContextIO.UserFailed,
         )
         return
 
     await SendMessage(
         chat_id=message.chat.id,
-        text="Doing search.\nPlease, wait",
+        text=await t_user(message.chat.id, "find.searching"),
     )
 
     search = ScrollingSearch()
@@ -109,7 +113,7 @@ async def CommandFindText(message: types.Message, state: FSMContext) -> None:
     if page is None:
         await SendMessage(
             chat_id=message.chat.id,
-            text="Found nothing",
+            text=await t_user(message.chat.id, "find.not_found"),
         )
         await state.clear()
         return
@@ -138,7 +142,9 @@ async def CommandFindCallback(
 
     if search is None:
         await callback_query.message.edit_reply_markup(reply_markup=None)
-        await callback_query.answer("Search is expired")
+        await callback_query.answer(
+            await t_user(callback_query.from_user.id, "find.search_expired")
+        )
 
         return
 
@@ -155,7 +161,9 @@ async def CommandFindCallback(
                     prev=search.index > 0,
                 )
             )
-            await callback_query.answer("No more pages")
+            await callback_query.answer(
+                await t_user(callback_query.from_user.id, "find.no_more_pages")
+            )
 
             return
 
