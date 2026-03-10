@@ -11,7 +11,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from nespresso.bot.lib.message.checks import CheckVerified
-from nespresso.bot.lib.message.i18n import t_user
+from nespresso.bot.lib.message.i18n import GetUserLanguage, t
 from nespresso.bot.lib.message.io import ContextIO, SendMessage
 from nespresso.recsys.searching.preprocessing.embedding import CalculateTokenLen
 from nespresso.recsys.searching.preprocessing.model import TOKEN_LEN
@@ -72,16 +72,18 @@ class FindStates(StatesGroup):
 
 @router.message(StateFilter(None), Command("find"))
 async def CommandFind(message: types.Message, state: FSMContext) -> None:
+    lang = await GetUserLanguage(message.chat.id)
+
     if not await CheckVerified(chat_id=message.chat.id):
         await SendMessage(
             chat_id=message.chat.id,
-            text=await t_user(message.chat.id, "find.only_registered"),
+            text=t(lang, "find.only_registered"),
         )
         return
 
     await SendMessage(
         chat_id=message.chat.id,
-        text=await t_user(message.chat.id, "find.enter_query"),
+        text=t(lang, "find.enter_query"),
     )
     await state.set_state(FindStates.Text)
 
@@ -90,11 +92,13 @@ async def CommandFind(message: types.Message, state: FSMContext) -> None:
 async def CommandFindText(message: types.Message, state: FSMContext) -> None:
     assert message.text is not None
 
+    lang = await GetUserLanguage(message.chat.id)
+
     if CalculateTokenLen(message.text) > TOKEN_LEN:
         await SendMessage(
             chat_id=message.chat.id,
-            text=await t_user(
-                message.chat.id,
+            text=t(
+                lang,
                 "find.too_long",
                 percent=PercentageToReduce(message.text),
             ),
@@ -104,7 +108,7 @@ async def CommandFindText(message: types.Message, state: FSMContext) -> None:
 
     await SendMessage(
         chat_id=message.chat.id,
-        text=await t_user(message.chat.id, "find.searching"),
+        text=t(lang, "find.searching"),
     )
 
     search = ScrollingSearch()
@@ -113,7 +117,7 @@ async def CommandFindText(message: types.Message, state: FSMContext) -> None:
     if page is None:
         await SendMessage(
             chat_id=message.chat.id,
-            text=await t_user(message.chat.id, "find.not_found"),
+            text=t(lang, "find.not_found"),
         )
         await state.clear()
         return
@@ -137,13 +141,15 @@ async def CommandFindCallback(
 ) -> None:
     assert isinstance(callback_query.message, types.Message)
 
+    lang = await GetUserLanguage(callback_query.from_user.id)
+
     search_id = callback_data.search_id
     search: ScrollingSearch | None = SEARCHES.get(search_id, None)
 
     if search is None:
         await callback_query.message.edit_reply_markup(reply_markup=None)
         await callback_query.answer(
-            await t_user(callback_query.from_user.id, "find.search_expired")
+            t(lang, "find.search_expired")
         )
 
         return
@@ -162,7 +168,7 @@ async def CommandFindCallback(
                 )
             )
             await callback_query.answer(
-                await t_user(callback_query.from_user.id, "find.no_more_pages")
+                t(lang, "find.no_more_pages")
             )
 
             return

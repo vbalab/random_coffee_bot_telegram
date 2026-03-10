@@ -10,10 +10,10 @@ from aiogram.types import KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemo
 from nespresso.bot.handlers.client.email.verification import CreateCode
 from nespresso.bot.lib.message.checks import CheckVerified
 from nespresso.bot.lib.message.i18n import (
+    GetUserLanguage,
     GetUserLanguageOrNone,
     SetUserLanguage,
     t,
-    t_user,
 )
 from nespresso.bot.lib.message.io import ContextIO, SendDocument, SendMessage
 from nespresso.core.configs.paths import PATH_TERMS_OF_USE
@@ -43,16 +43,16 @@ def LanguageKeyboard() -> ReplyKeyboardMarkup:
     )
 
 
-async def AskForContact(chat_id: int) -> None:
+async def AskForContact(chat_id: int, lang: str) -> None:
     button = KeyboardButton(
-        text=await t_user(chat_id, "start.share_contact_button"),
+        text=t(lang, "start.share_contact_button"),
         request_contact=True,
     )
     keyboard = ReplyKeyboardMarkup(keyboard=[[button]], resize_keyboard=True)
 
     await SendMessage(
         chat_id=chat_id,
-        text=await t_user(chat_id, "start.share_contact"),
+        text=t(lang, "start.share_contact"),
         reply_markup=keyboard,
     )
 
@@ -70,14 +70,16 @@ async def CommandStart(message: types.Message, state: FSMContext) -> None:
         await state.set_state(StartStates.ChooseLanguage)
         return
 
+    lang = await GetUserLanguage(chat_id)
+
     if await CheckVerified(chat_id=chat_id):
         await SendMessage(
             chat_id=chat_id,
-            text=await t_user(chat_id, "start.already_registered"),
+            text=t(lang, "start.already_registered"),
         )
         return
 
-    await AskForContact(chat_id)
+    await AskForContact(chat_id, lang)
     await state.set_state(StartStates.GetPhoneNumber)
 
 
@@ -102,32 +104,32 @@ async def CommandStartChooseLanguage(message: types.Message, state: FSMContext) 
         )
         return
 
-    await SendMessage(
-        chat_id=chat_id,
-        text=await t_user(chat_id, "language.selected"),
-    )
+    lang = await GetUserLanguage(chat_id)
+
+    await SendMessage(chat_id=chat_id, text=t(lang, "language.selected"))
 
     if await CheckVerified(chat_id=chat_id):
         await SendMessage(
             chat_id=chat_id,
-            text=await t_user(chat_id, "start.already_registered"),
+            text=t(lang, "start.already_registered"),
             reply_markup=ReplyKeyboardRemove(),
         )
         await state.clear()
         return
 
-    await AskForContact(chat_id)
+    await AskForContact(chat_id, lang)
     await state.set_state(StartStates.GetPhoneNumber)
 
 
 @router.message(StateFilter(StartStates.GetPhoneNumber))
 async def CommandStartGetPhoneNumber(message: types.Message, state: FSMContext) -> None:
     chat_id = message.chat.id
+    lang = await GetUserLanguage(chat_id)
 
     if message.contact is None:
         await SendMessage(
             chat_id=chat_id,
-            text=await t_user(chat_id, "start.contact_missing"),
+            text=t(lang, "start.contact_missing"),
             context=ContextIO.UserFailed,
         )
         return
@@ -135,7 +137,7 @@ async def CommandStartGetPhoneNumber(message: types.Message, state: FSMContext) 
     if message.contact.user_id is None or message.from_user is None:
         await SendMessage(
             chat_id=chat_id,
-            text=await t_user(chat_id, "start.contact_unavailable"),
+            text=t(lang, "start.contact_unavailable"),
             context=ContextIO.UserFailed,
         )
         return
@@ -143,7 +145,7 @@ async def CommandStartGetPhoneNumber(message: types.Message, state: FSMContext) 
     if message.contact.user_id != message.from_user.id:
         await SendMessage(
             chat_id=chat_id,
-            text=await t_user(chat_id, "start.contact_foreign"),
+            text=t(lang, "start.contact_foreign"),
             context=ContextIO.UserFailed,
         )
         return
@@ -157,13 +159,13 @@ async def CommandStartGetPhoneNumber(message: types.Message, state: FSMContext) 
 
     await SendMessage(
         chat_id=chat_id,
-        text=await t_user(chat_id, "common.thanks"),
+        text=t(lang, "common.thanks"),
         reply_markup=ReplyKeyboardRemove(),
     )
 
     await SendMessage(
         chat_id=chat_id,
-        text=await t_user(chat_id, "start.enter_email"),
+        text=t(lang, "start.enter_email"),
     )
 
     await state.set_state(StartStates.EmailGet)
@@ -174,12 +176,13 @@ async def CommandStartEmailGet(message: types.Message, state: FSMContext) -> Non
     assert message.text is not None
 
     chat_id = message.chat.id
+    lang = await GetUserLanguage(chat_id)
     email = message.text.replace(" ", "")
 
     if "@nes.ru" not in email:
         await SendMessage(
             chat_id=chat_id,
-            text=await t_user(chat_id, "start.email_invalid"),
+            text=t(lang, "start.email_invalid"),
             context=ContextIO.UserFailed,
         )
         return
@@ -193,7 +196,7 @@ async def CommandStartEmailGet(message: types.Message, state: FSMContext) -> Non
 
     await SendMessage(
         chat_id=chat_id,
-        text=await t_user(chat_id, "start.sending_code"),
+        text=t(lang, "start.sending_code"),
     )
 
     code = CreateCode()
@@ -203,7 +206,7 @@ async def CommandStartEmailGet(message: types.Message, state: FSMContext) -> Non
 
     await SendMessage(
         chat_id=chat_id,
-        text=await t_user(chat_id, "start.sent_code"),
+        text=t(lang, "start.sent_code"),
     )
 
     await state.set_data({"code": code})
@@ -215,6 +218,7 @@ async def CommandStartEmailConfirm(message: types.Message, state: FSMContext) ->
     assert message.text is not None
 
     chat_id = message.chat.id
+    lang = await GetUserLanguage(chat_id)
 
     data = await state.get_data()
     code_actual = str(data["code"])
@@ -223,24 +227,24 @@ async def CommandStartEmailConfirm(message: types.Message, state: FSMContext) ->
     if code_actual != code_provided:
         await SendMessage(
             chat_id=chat_id,
-            text=await t_user(chat_id, "start.code_invalid"),
+            text=t(lang, "start.code_invalid"),
             context=ContextIO.UserFailed,
         )
         return
 
     await SendMessage(
         chat_id=chat_id,
-        text=await t_user(chat_id, "common.thanks"),
+        text=t(lang, "common.thanks"),
     )
 
-    button = KeyboardButton(text=await t_user(chat_id, "start.accept_button"))
+    button = KeyboardButton(text=t(lang, "start.accept_button"))
     keyboard = ReplyKeyboardMarkup(keyboard=[[button]], resize_keyboard=True)
 
     # TODO: create actual service of service
     await SendDocument(
         chat_id=chat_id,
         document=types.FSInputFile(PATH_TERMS_OF_USE),
-        caption=await t_user(chat_id, "start.terms_caption"),
+        caption=t(lang, "start.terms_caption"),
         reply_markup=keyboard,
     )
 
@@ -253,12 +257,13 @@ async def CommandStartTerms(message: types.Message, state: FSMContext) -> None:
     assert message.text is not None
 
     chat_id = message.chat.id
+    lang = await GetUserLanguage(chat_id)
     data = await state.get_data()
 
     if message.text != data["button_text"]:
         await SendMessage(
             chat_id=chat_id,
-            text=await t_user(chat_id, "start.terms_not_accepted"),
+            text=t(lang, "start.terms_not_accepted"),
             context=ContextIO.UserFailed,
         )
         return
@@ -272,12 +277,12 @@ async def CommandStartTerms(message: types.Message, state: FSMContext) -> None:
 
     await SendMessage(
         chat_id=chat_id,
-        text=await t_user(chat_id, "start.verified"),
+        text=t(lang, "start.verified"),
     )
 
     await SendMessage(
         chat_id=chat_id,
-        text=await t_user(chat_id, "start.about"),
+        text=t(lang, "start.about"),
     )
 
     await state.clear()
