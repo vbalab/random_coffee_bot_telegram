@@ -1,3 +1,4 @@
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from nespresso.core.configs.settings import settings
@@ -21,3 +22,6 @@ async def EnsureDB() -> None:
     """
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.execute(
+            text("ALTER TABLE tg_user ADD COLUMN IF NOT EXISTS language VARCHAR")
+        )

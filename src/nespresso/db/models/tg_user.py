@@ -38,6 +38,10 @@ class TgUser(Base):
         index=True,
         nullable=True,
     )
+    language: Mapped[str | None] = mapped_column(
+        String,
+        nullable=True,
+    )
 
     # --- description ---
 
