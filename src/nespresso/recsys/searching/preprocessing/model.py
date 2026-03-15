@@ -22,7 +22,7 @@ def EnsureSentenceTransformer() -> None:
 def GetSentenceTransformer() -> SentenceTransformer:
     EnsureSentenceTransformer()
 
-    model = SentenceTransformer(model_name_or_path=str(DIR_EMBEDDING))
+    model = SentenceTransformer(model_name_or_path=str(DIR_EMBEDDING), trust_remote_code=True)
     model.max_seq_length = TOKEN_LEN
 
     return model
