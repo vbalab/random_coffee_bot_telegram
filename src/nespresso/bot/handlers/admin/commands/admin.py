@@ -8,6 +8,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
+from nespresso.bot.handlers.admin.commands.admins import ShowAdminsPanel
 from nespresso.bot.handlers.admin.commands.blocking import (
     BlockingAction,
     BlockingKeyboard,
@@ -40,7 +41,8 @@ _description = """\
 📤 Send — send a message to a user
 📢 Send All — broadcast to all verified users
 🚫 Blocking — block or unblock a user
-⚙️ Matching — control the matching schedule\
+⚙️ Matching — control the matching schedule
+👥 Admins — manage admin list\
 """
 
 
@@ -51,6 +53,7 @@ class AdminPanelAction(str, Enum):
     SendAll = "📢 Send All"
     Blocking = "🚫 Blocking"
     Matching = "⚙️ Matching"
+    Admins = "👥 Admins"
 
 
 class AdminPanelCallbackData(CallbackData, prefix="admin_panel"):
@@ -77,6 +80,7 @@ def AdminPanelKeyboard() -> InlineKeyboardMarkup:
             [Button(AdminPanelAction.Logs), Button(AdminPanelAction.Messages)],
             [Button(AdminPanelAction.Send), Button(AdminPanelAction.SendAll)],
             [Button(AdminPanelAction.Blocking), Button(AdminPanelAction.Matching)],
+            [Button(AdminPanelAction.Admins)],
         ]
     )
 
@@ -333,3 +337,15 @@ async def PanelSendMessage(message: types.Message, state: FSMContext) -> None:
         await SendMessage(chat_id=message.chat.id, text="Unsuccessful")
 
     await state.clear()
+
+
+# --- Admins ---
+
+
+@router.callback_query(
+    AdminPanelCallbackData.filter(F.action == AdminPanelAction.Admins)
+)
+async def PanelAdmins(callback_query: types.CallbackQuery) -> None:
+    assert isinstance(callback_query.message, types.Message)
+    await callback_query.answer()
+    await ShowAdminsPanel(callback_query.message.chat.id)

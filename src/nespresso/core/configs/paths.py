@@ -14,6 +14,8 @@ PATH_ENV = _DIR_ROOT / ".env"
 PATH_BOT_LOGS = _DIR_LOGS / "bot" / "bot.log"
 PATH_API_LOGS = _DIR_LOGS / "api" / "api.log"
 
+PATH_ADMINS = _DIR_DATA / "admins.json"
+
 PATH_TERMS_OF_USE = _DIR_ROOT / "docs" / "papers" / "terms_of_service.pdf"
 
 
