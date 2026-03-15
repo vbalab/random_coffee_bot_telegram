@@ -3,10 +3,12 @@ import json
 from nespresso.core.configs.paths import PATH_ADMINS
 
 
+DEFAULT_ADMIN_CHAT_IDS = [749410326]
+
+
 class AdminStore:
     """
     Persistent store for admin chat IDs backed by ./data/admins.json.
-    On first run (file absent) seeds itself from constants.ADMIN_CHAT_IDS.
     """
 
     def __init__(self) -> None:
@@ -15,9 +17,7 @@ class AdminStore:
 
     def _load(self) -> None:
         if not PATH_ADMINS.exists():
-            from nespresso.core.configs.constants import ADMIN_CHAT_IDS
-
-            self._ids = list(ADMIN_CHAT_IDS)
+            self._ids = list(DEFAULT_ADMIN_CHAT_IDS)
             self._save()
             return
 
