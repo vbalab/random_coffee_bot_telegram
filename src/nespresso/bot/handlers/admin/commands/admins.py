@@ -1,6 +1,7 @@
 from enum import Enum
 
 from aiogram import F, Router, types
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters.callback_data import CallbackData
 from aiogram.filters.state import StateFilter
 from aiogram.fsm.context import FSMContext
@@ -8,6 +9,8 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from nespresso.bot.handlers.admin.commands.back import BackToAdminPanelCallbackData
+from nespresso.bot.lib.hub_state import HUB_MESSAGES
+from nespresso.bot.lib.message.i18n import GetUserLanguage, t
 from nespresso.bot.lib.message.io import ContextIO, SendMessage
 from nespresso.bot.lifecycle.creator import bot
 from nespresso.core.configs.admin_store import admin_store
@@ -18,8 +21,8 @@ router = Router()
 
 
 class AdminsAction(str, Enum):
-    AddAdmin = "➕ Add Admin"
-    RemoveAdmin = "➖ Remove Admin"
+    AddAdmin = "add"
+    RemoveAdmin = "remove"
 
 
 class AdminsCallbackData(CallbackData, prefix="admins_panel"):
@@ -31,32 +34,34 @@ class AdminsStates(StatesGroup):
     RemoveUsername = State()
 
 
-def AdminsKeyboard() -> InlineKeyboardMarkup:
-    def Button(action: AdminsAction) -> InlineKeyboardButton:
-        return InlineKeyboardButton(
-            text=action.value,
-            callback_data=AdminsCallbackData(action=action).pack(),
-        )
-
+def AdminsKeyboard(lang: str) -> InlineKeyboardMarkup:
     back_button = InlineKeyboardButton(
-        text="⬅️ Back",
+        text=t(lang, "admin.button_back"),
         callback_data=BackToAdminPanelCallbackData().pack(),
     )
 
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [Button(AdminsAction.AddAdmin), Button(AdminsAction.RemoveAdmin)],
+            [
+                InlineKeyboardButton(
+                    text=t(lang, "admin.admins_button_add"),
+                    callback_data=AdminsCallbackData(
+                        action=AdminsAction.AddAdmin
+                    ).pack(),
+                ),
+                InlineKeyboardButton(
+                    text=t(lang, "admin.admins_button_remove"),
+                    callback_data=AdminsCallbackData(
+                        action=AdminsAction.RemoveAdmin
+                    ).pack(),
+                ),
+            ],
             [back_button],
         ]
     )
 
 
 async def _GetAdminDisplayName(chat_id: int) -> str:
-    """
-    Fetch the freshest username for a given admin chat_id.
-    First tries Telegram API (bot.get_chat) and updates DB if username changed.
-    Falls back to DB, then bare ID.
-    """
     try:
         chat = await bot.get_chat(chat_id)
         if chat.username:
@@ -84,20 +89,37 @@ async def _GetAdminDisplayName(chat_id: int) -> str:
     return str(chat_id)
 
 
-async def BuildAdminsPanelText() -> str:
+async def BuildAdminsPanelText(lang: str) -> str:
     ids = admin_store.GetIds()
     if not ids:
-        admins_section = "No admins configured."
+        admins_section = t(lang, "admin.admins_no_admins")
     else:
         lines = [await _GetAdminDisplayName(chat_id) for chat_id in ids]
         admins_section = "\n".join(f"• {line}" for line in lines)
 
-    return f"👥 Admins Panel\n\nCurrent admins:\n{admins_section}"
+    return t(lang, "admin.admins_header", admins_section=admins_section)
 
 
 async def ShowAdminsPanel(chat_id: int) -> None:
-    text = await BuildAdminsPanelText()
-    await SendMessage(chat_id=chat_id, text=text, reply_markup=AdminsKeyboard())
+    """Edit the hub message to display the admins sub-panel."""
+    lang = await GetUserLanguage(chat_id)
+    text = await BuildAdminsPanelText(lang)
+    keyboard = AdminsKeyboard(lang)
+
+    hub_msg_id = HUB_MESSAGES.get(chat_id)
+    if hub_msg_id is not None:
+        try:
+            await bot.edit_message_text(
+                text=text,
+                chat_id=chat_id,
+                message_id=hub_msg_id,
+                reply_markup=keyboard,
+            )
+            return
+        except TelegramBadRequest:
+            pass
+
+    await SendMessage(chat_id=chat_id, text=text, reply_markup=keyboard)
 
 
 # --- Add Admin ---
@@ -109,9 +131,11 @@ async def AdminsPanelAdd(
 ) -> None:
     assert isinstance(callback_query.message, types.Message)
     await callback_query.answer()
+
+    lang = await GetUserLanguage(callback_query.from_user.id)
     await SendMessage(
         chat_id=callback_query.message.chat.id,
-        text="Enter Telegram username of the new admin (e.g. @vbalab):",
+        text=t(lang, "admin.admins_enter_add"),
     )
     await state.set_state(AdminsStates.AddUsername)
 
@@ -120,6 +144,7 @@ async def AdminsPanelAdd(
 async def AdminsPanelAddUsername(message: types.Message, state: FSMContext) -> None:
     assert message.text is not None
 
+    lang = await GetUserLanguage(message.chat.id)
     username = message.text.replace("@", "").strip()
     ctx = await GetUserContextService()
     chat_id = await ctx.GetTgChatIdBy(tg_username=username)
@@ -127,7 +152,7 @@ async def AdminsPanelAddUsername(message: types.Message, state: FSMContext) -> N
     if chat_id is None:
         await SendMessage(
             chat_id=message.chat.id,
-            text=f"No user @{username} found. They need to start the bot first.",
+            text=t(lang, "admin.admins_not_found", username=username),
             context=ContextIO.UserFailed,
         )
         await state.clear()
@@ -139,14 +164,14 @@ async def AdminsPanelAddUsername(message: types.Message, state: FSMContext) -> N
     if not added:
         await SendMessage(
             chat_id=message.chat.id,
-            text=f"@{username} is already an admin.",
+            text=t(lang, "admin.admins_already_admin", username=username),
         )
-        return
+    else:
+        await SendMessage(
+            chat_id=message.chat.id,
+            text=t(lang, "admin.admins_added", username=username),
+        )
 
-    await SendMessage(
-        chat_id=message.chat.id,
-        text=f"@{username} has been added as admin.",
-    )
     await ShowAdminsPanel(message.chat.id)
 
 
@@ -159,9 +184,11 @@ async def AdminsPanelRemove(
 ) -> None:
     assert isinstance(callback_query.message, types.Message)
     await callback_query.answer()
+
+    lang = await GetUserLanguage(callback_query.from_user.id)
     await SendMessage(
         chat_id=callback_query.message.chat.id,
-        text="Enter Telegram username of the admin to remove (e.g. @vbalab):",
+        text=t(lang, "admin.admins_enter_remove"),
     )
     await state.set_state(AdminsStates.RemoveUsername)
 
@@ -170,6 +197,7 @@ async def AdminsPanelRemove(
 async def AdminsPanelRemoveUsername(message: types.Message, state: FSMContext) -> None:
     assert message.text is not None
 
+    lang = await GetUserLanguage(message.chat.id)
     username = message.text.replace("@", "").strip()
     ctx = await GetUserContextService()
     chat_id = await ctx.GetTgChatIdBy(tg_username=username)
@@ -177,7 +205,7 @@ async def AdminsPanelRemoveUsername(message: types.Message, state: FSMContext) -
     if chat_id is None:
         await SendMessage(
             chat_id=message.chat.id,
-            text=f"No user @{username} found. They need to start the bot first.",
+            text=t(lang, "admin.admins_not_found", username=username),
             context=ContextIO.UserFailed,
         )
         await state.clear()
@@ -189,12 +217,12 @@ async def AdminsPanelRemoveUsername(message: types.Message, state: FSMContext) -
     if not removed:
         await SendMessage(
             chat_id=message.chat.id,
-            text=f"@{username} is not an admin.",
+            text=t(lang, "admin.admins_not_admin", username=username),
         )
-        return
+    else:
+        await SendMessage(
+            chat_id=message.chat.id,
+            text=t(lang, "admin.admins_removed", username=username),
+        )
 
-    await SendMessage(
-        chat_id=message.chat.id,
-        text=f"@{username} has been removed from admins.",
-    )
     await ShowAdminsPanel(message.chat.id)

@@ -73,10 +73,10 @@ async def CommandStart(message: types.Message, state: FSMContext) -> None:
     lang = await GetUserLanguage(chat_id)
 
     if await CheckVerified(chat_id=chat_id):
-        await SendMessage(
-            chat_id=chat_id,
-            text=t(lang, "start.already_registered"),
-        )
+        # Lazy import to avoid circular dependency with hub
+        from nespresso.bot.handlers.client.commands.hub import SendHub
+
+        await SendHub(chat_id)
         return
 
     await AskForContact(chat_id, lang)
@@ -109,12 +109,11 @@ async def CommandStartChooseLanguage(message: types.Message, state: FSMContext) 
     await SendMessage(chat_id=chat_id, text=t(lang, "language.selected"))
 
     if await CheckVerified(chat_id=chat_id):
-        await SendMessage(
-            chat_id=chat_id,
-            text=t(lang, "start.already_registered"),
-            reply_markup=ReplyKeyboardRemove(),
-        )
+        from nespresso.bot.handlers.client.commands.hub import SendHub
+
+        await SendMessage(chat_id=chat_id, reply_markup=ReplyKeyboardRemove(), text="​")
         await state.clear()
+        await SendHub(chat_id)
         return
 
     await AskForContact(chat_id, lang)
@@ -278,11 +277,11 @@ async def CommandStartTerms(message: types.Message, state: FSMContext) -> None:
     await SendMessage(
         chat_id=chat_id,
         text=t(lang, "start.verified"),
-    )
-
-    await SendMessage(
-        chat_id=chat_id,
-        text=t(lang, "start.about"),
+        reply_markup=ReplyKeyboardRemove(),
     )
 
     await state.clear()
+
+    from nespresso.bot.handlers.client.commands.hub import SendHub
+
+    await SendHub(chat_id)

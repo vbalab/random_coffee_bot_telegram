@@ -1,15 +1,5 @@
-from aiogram import Router, types
-from aiogram.filters.command import Command
+from aiogram import Router
 
-from nespresso.bot.lib.message.filters import AdminFilter
-from nespresso.bot.lib.message.io import SendDocument
-from nespresso.core.configs.paths import PATH_BOT_LOGS
-
+# Logs functionality is handled via the admin panel in admin.py.
+# This file is kept as a placeholder.
 router = Router()
-
-
-@router.message(Command("logs"), AdminFilter())
-async def CommandLogs(message: types.Message) -> None:
-    await SendDocument(
-        chat_id=message.chat.id, document=types.FSInputFile(PATH_BOT_LOGS)
-    )
