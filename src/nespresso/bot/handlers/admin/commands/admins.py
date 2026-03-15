@@ -7,6 +7,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
+from nespresso.bot.handlers.admin.commands.back import BackToAdminPanelCallbackData
 from nespresso.bot.lib.message.io import ContextIO, SendMessage
 from nespresso.bot.lifecycle.creator import bot
 from nespresso.core.configs.admin_store import admin_store
@@ -37,9 +38,15 @@ def AdminsKeyboard() -> InlineKeyboardMarkup:
             callback_data=AdminsCallbackData(action=action).pack(),
         )
 
+    back_button = InlineKeyboardButton(
+        text="⬅️ Back",
+        callback_data=BackToAdminPanelCallbackData().pack(),
+    )
+
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [Button(AdminsAction.AddAdmin), Button(AdminsAction.RemoveAdmin)],
+            [back_button],
         ]
     )
 
