@@ -2,8 +2,7 @@
 *cache
 *__pycache__/
 
-data/*
-!data/admins.json
+data
 try
 .env
 venv

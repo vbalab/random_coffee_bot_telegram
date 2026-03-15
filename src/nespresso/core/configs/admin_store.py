@@ -1,6 +1,6 @@
 import json
 
-from nespresso.core.configs.paths import PATH_ADMINS
+from nespresso.core.configs.paths import PATH_ADMINS, EnsurePaths
 
 
 DEFAULT_ADMIN_CHAT_IDS = [749410326]
@@ -8,7 +8,7 @@ DEFAULT_ADMIN_CHAT_IDS = [749410326]
 
 class AdminStore:
     """
-    Persistent store for admin chat IDs backed by ./data/admins.json.
+    Persistent store for admin chat IDs backed by ./data/admins/admins.json.
     """
 
     def __init__(self) -> None:
@@ -16,16 +16,10 @@ class AdminStore:
         self._load()
 
     def _load(self) -> None:
-        if not PATH_ADMINS.exists():
-            self._ids = list(DEFAULT_ADMIN_CHAT_IDS)
-            self._save()
-            return
-
         with open(PATH_ADMINS) as f:
             self._ids = [int(x) for x in json.load(f)]
 
     def _save(self) -> None:
-        PATH_ADMINS.parent.mkdir(parents=True, exist_ok=True)
         with open(PATH_ADMINS, "w") as f:
             json.dump(self._ids, f, indent=2)
 
@@ -52,4 +46,5 @@ class AdminStore:
         return True
 
 
+EnsurePaths()
 admin_store = AdminStore()
