@@ -36,13 +36,19 @@ router = Router()
 _description = """\
 ⚙️ Admin Panel
 
-📋 Logs — download bot logs
-💬 Messages — view messages of a user
-📤 Send — send a message to a user
-📢 Send All — broadcast to all verified users
-🚫 Blocking — block or unblock a user
-⚙️ Matching — control the matching schedule
-👥 Admins — manage admin list\
+- 📋 Logs — download bot logs
+
+- 💬 Messages — view messages of a user
+
+- 📤 Send — send a message to a user
+
+- 📢 Send All — broadcast to all verified users
+
+- 🚫 Blocking — block or unblock a user
+
+- ⚙️ Matching — control the matching schedule
+
+- 👥 Admins — manage admin list\
 """
 
 
