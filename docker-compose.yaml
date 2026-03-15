@@ -72,7 +72,7 @@ services:
     volumes:
       - ./data/logs/bot:/usr/src/app/data/logs/bot
       - ./data/recsys:/usr/src/app/data/recsys
-      - ./data/admins.json:/usr/src/app/data/admins.json
+      - ./data/admins:/usr/src/app/data/admins
     networks:
       - nespresso_network
     stdin_open: true              # Keeps STDIN open
