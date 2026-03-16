@@ -184,7 +184,6 @@ async def AdminsPanelAddUsername(message: types.Message, state: FSMContext) -> N
             text=t(lang, "admin.admins_not_found", username=username),
             context=ContextIO.UserFailed,
         )
-        await state.clear()
         return
 
     added = admin_store.Add(chat_id)
@@ -240,7 +239,6 @@ async def AdminsPanelRemoveUsername(message: types.Message, state: FSMContext) -
             text=t(lang, "admin.admins_not_found", username=username),
             context=ContextIO.UserFailed,
         )
-        await state.clear()
         return
 
     removed = admin_store.Remove(chat_id)

@@ -305,7 +305,6 @@ async def PanelSendUsername(message: types.Message, state: FSMContext) -> None:
             text=t(lang, "admin.user_not_found"),
             context=ContextIO.UserFailed,
         )
-        await state.clear()
         return
 
     await SendMessage(chat_id=message.chat.id, text=t(lang, "admin.send_enter_text"))
