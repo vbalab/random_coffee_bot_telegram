@@ -85,9 +85,9 @@ async def CreateMatching(triggered_by: int) -> dict[int, list[int]]:
     """
     ctx = await GetUserContextService()
 
-    # Only verified, non-blocked, non-opted-out users
+    # Only verified, non-blocked, non-opted-out users with a linked NES profile
     all_users = await ctx.GetTgUsersOnCondition(
-        condition=TgUser.verified & ~TgUser.blocked & ~TgUser.matching_paused,
+        condition=TgUser.verified & ~TgUser.blocked & ~TgUser.matching_paused & TgUser.nes_id.isnot(None),
         column=TgUser.chat_id,
     )
 
