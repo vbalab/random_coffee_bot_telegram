@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from nespresso.db.models.match import MatchAssignment, MatchRound
 from nespresso.db.models.message import Message, MessageSide
 from nespresso.db.models.nes_user import NesUser
 from nespresso.db.models.tg_user import TgUser
@@ -185,3 +186,40 @@ class AnalyticsRepository:
         async with self.session() as session:
             result = await session.execute(select(Message).order_by(Message.time))
             return list(result.scalars().all())
+
+    async def GetMatchingStats(self) -> dict[str, int | str]:
+        async with self.session() as session:
+            opted_out = (
+                await session.scalar(
+                    select(func.count()).where(TgUser.matching_paused.is_(True))
+                )
+                or 0
+            )
+            total_rounds = (
+                await session.scalar(select(func.count()).select_from(MatchRound)) or 0
+            )
+            last_round = await session.scalar(
+                select(MatchRound).order_by(MatchRound.created_at.desc()).limit(1)
+            )
+            last_round_date: str = (
+                last_round.created_at.strftime("%Y-%m-%d %H:%M UTC")
+                if last_round is not None
+                else "—"
+            )
+            last_round_assignments = 0
+            if last_round is not None:
+                last_round_assignments = (
+                    await session.scalar(
+                        select(func.count()).where(
+                            MatchAssignment.round_id == last_round.id
+                        )
+                    )
+                    or 0
+                )
+
+        return {
+            "opted_out": opted_out,
+            "total_rounds": total_rounds,
+            "last_round_date": last_round_date,
+            "last_round_assignments": last_round_assignments,
+        }

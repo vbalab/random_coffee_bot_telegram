@@ -1,6 +1,4 @@
-from datetime import datetime
 from enum import StrEnum
-from zoneinfo import ZoneInfo
 
 from aiogram import F, Router, types
 from aiogram.exceptions import TelegramBadRequest
@@ -16,11 +14,8 @@ from nespresso.bot.lifecycle.creator import bot
 from nespresso.db.models.tg_user import TgUser
 from nespresso.db.services.analytics import GetAnalyticsService
 from nespresso.db.services.user_context import GetUserContextService
-from nespresso.recsys.matching.schedule import GetNextMatchingTime
 
 router = Router()
-
-_MOSCOW_TZ = ZoneInfo("Europe/Moscow")
 
 
 class StatisticsAction(StrEnum):
@@ -256,26 +251,18 @@ async def _BuildMatchingStatsText(lang: str) -> str:
     )
     eligible = len([cid for cid in verified_ids if cid not in blocked_ids])
 
-    next_run = GetNextMatchingTime()
-    now_moscow = datetime.now(_MOSCOW_TZ)
-    current_week = now_moscow.isocalendar()[1]
-    is_matching_week = current_week % 2 != 0
-
-    status = t(
-        lang,
-        "admin.stats_matching_active" if next_run is not None else "admin.stats_matching_paused",
-    )
-    next_run_str = next_run.strftime("%Y-%m-%d %H:%M %Z") if next_run is not None else "—"
+    svc = await GetAnalyticsService()
+    ms = await svc.GetMatchingStats()
 
     return t(
         lang,
         "admin.stats_matching",
         eligible=eligible,
         verified=len(verified_ids),
-        status=status,
-        next_run=next_run_str,
-        current_week=current_week,
-        is_matching_week=t(lang, "common.yes" if is_matching_week else "common.no"),
+        opted_out=ms["opted_out"],
+        total_rounds=ms["total_rounds"],
+        last_round_date=ms["last_round_date"],
+        last_round_assignments=ms["last_round_assignments"],
     )
 
 
