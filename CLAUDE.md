@@ -5,7 +5,7 @@
 **NESpresso** is a Telegram bot for New Economic School (NES) alumni networking. It enables alumni to:
 - Register and verify their NES identity (email-based)
 - Search for other alumni using semantic + keyword hybrid search
-- Get automatically matched with another alumnus biweekly
+- Get manually matched with other alumni when an admin triggers a matching round
 
 **Entry point:** `python -m nespresso` → `src/nespresso/__main__.py`
 
@@ -21,7 +21,6 @@
 | Search engine | OpenSearch 3.0 (BM25 + KNN vector) |
 | ML embeddings | Alibaba GTE multilingual (768-dim, via Sentence Transformers) |
 | Keyword extraction | KeyBERT |
-| Task scheduling | APScheduler 3.x |
 | Email | aiosmtplib (Gmail SMTP) |
 | Config | Pydantic BaseSettings (.env) |
 | i18n | Custom JSON-based (EN, RU) |
@@ -47,19 +46,23 @@ src/nespresso/
 ├── db/                      # Database layer
 │   ├── base.py              # DeclarativeBase + IntoDict()
 │   ├── models/
+│   │   ├── __init__.py      # Imports all models so Base.metadata discovers them
 │   │   ├── tg_user.py       # TgUser model (Telegram identity)
 │   │   ├── nes_user.py      # NesUser model (alumni profile)
 │   │   ├── message.py       # Message model (audit log)
+│   │   ├── match.py         # MatchRound, MatchAssignment, MatchFeedback models
 │   │   └── schemas/
 │   │       └── nes_user.py  # Pydantic schema for NesUser API response
 │   ├── repositories/        # Repository pattern (pure DB access)
 │   │   ├── tg_user.py
 │   │   ├── nes_user.py
 │   │   ├── message.py
+│   │   ├── match.py         # MatchRepository
 │   │   └── checking.py      # CheckColumnBelongsToModel(), CheckOnlyOneArgProvided()
 │   ├── services/            # Business logic over repos
 │   │   ├── user.py          # UserService (TgUser + NesUser)
 │   │   ├── message.py       # MessageService
+│   │   ├── matching.py      # MatchingService (match rounds + assignments + feedback)
 │   │   └── user_context.py  # UserContextService (unified facade)
 │   └── session.py           # Async engine, session factory, EnsureDB()
 ├── bot/                     # Telegram bot
@@ -69,7 +72,7 @@ src/nespresso/
 │   ├── handlers/
 │   │   ├── client/
 │   │   │   ├── commands/
-│   │   │   │   ├── hub.py   # Hub panel: SendHub(), HubKeyboard(), back-navigation
+│   │   │   │   ├── hub.py   # Hub panel: SendHub(), HubKeyboard(), matching toggle
 │   │   │   │   ├── start.py # Registration FSM (5 states)
 │   │   │   │   └── find.py  # Search FSM (2 states + pagination)
 │   │   │   ├── email/
@@ -80,8 +83,8 @@ src/nespresso/
 │   │   │   │   ├── admin.py     # Main panel + all action handlers
 │   │   │   │   ├── back.py      # BackToAdminPanelCallbackData, BackToHubCallbackData
 │   │   │   │   ├── blocking.py  # Block/unblock users sub-panel
-│   │   │   │   ├── admins.py    # Admin list management sub-panel
-│   │   │   │   ├── matching.py  # Pause/resume scheduler sub-panel
+│   │   │   │   ├── admins.py    # Admin list management sub-panel (notifies other admins on changes)
+│   │   │   │   ├── matching.py  # Run matching + send feedback request sub-panel
 │   │   │   │   ├── send.py      # (stub)
 │   │   │   │   ├── senda.py     # (stub)
 │   │   │   │   ├── messages.py  # (stub)
@@ -122,8 +125,8 @@ src/nespresso/
 │   │   ├── document.py      # UpsertTextOpenSearch(), DeleteUserOpenSearch()
 │   │   └── search.py        # ScrollingSearch class + TTLCache
 │   └── matching/
-│       ├── assign.py        # MatchUsers() derangement + SendMatchingInfo()
-│       ├── schedule.py      # APScheduler job: StartMatching(), ShutdownMatching(), PauseMatching(), ResumeMatching()
+│       ├── assign.py        # MatchUsers(), MatchingPipeline() — core matching logic
+│       ├── schedule.py      # RunMatching(triggered_by) — thin entry point (no scheduler)
 │       └── emoji.py         # RandomEmoji() for match identity
 ├── api/
 │   ├── app.py               # FastAPI app + lifespan
@@ -150,9 +153,10 @@ bot/lib  ←──────────────────────�
      ▼                                       │
 db/services/user_context  (unified facade)  │
      │                                       │
-     ├── db/services/user    ←── db/repositories/tg_user
-     │                       ←── db/repositories/nes_user
-     └── db/services/message ←── db/repositories/message
+     ├── db/services/user     ←── db/repositories/tg_user
+     │                        ←── db/repositories/nes_user
+     ├── db/services/message  ←── db/repositories/message
+     └── db/services/matching ←── db/repositories/match
                                       │
                                       ▼
                                db/session  (AsyncSession)
@@ -160,8 +164,10 @@ db/services/user_context  (unified facade)  │
                                       ▼
                                db/models (SQLAlchemy ORM)
 
-recsys/searching ←── recsys/matching
-                 ←── bot/handlers/client/commands/find.py
+recsys/searching ←── bot/handlers/client/commands/find.py
+
+recsys/matching  ←── bot/handlers/admin/commands/matching.py
+                 ←── db/services/user_context (for saving rounds/assignments)
 
 recsys/profile   ←── recsys/matching/assign.py
 
@@ -195,6 +201,7 @@ core/configs ←── everywhere (settings, paths, admin_store)
 | `panel_message_id` | BigInteger | Last active hub message ID (for single-instance hub) |
 | `verified` | Boolean | Registration complete |
 | `blocked` | Boolean | Admin-blocked |
+| `matching_paused` | Boolean | User opted out of matching rounds (default False) |
 
 ### `NesUser` — Alumni profile (sourced from NES API)
 | Column | Type | Notes |
@@ -208,12 +215,36 @@ core/configs ←── everywhere (settings, paths, admin_store)
 | `pre_nes_education/post_nes_education` | JSON array | Education history |
 
 **Key methods on `NesUser`:**
-- `SelfDescription()` — hobbies + expertise as readable text
+- `SelfDescription()` — name, location, program/class
 - `WorkDescription()` — employment summary
 - `FullDescription()` — combined profile text (used for OpenSearch indexing)
 
 ### `Message` — Audit log
 Stores every bot↔user message exchange with timestamp and side (`Bot`/`User` enum).
+
+### `MatchRound` — Matching round record
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | Integer PK | Auto-increment |
+| `triggered_by` | BigInteger | chat_id of the admin who started the round |
+| `created_at` | DateTime | |
+
+### `MatchAssignment` — Directed match pair within a round
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | Integer PK | Auto-increment |
+| `round_id` | Integer FK→MatchRound | CASCADE delete |
+| `assigner_chat_id` | BigInteger | User who was told to reach out |
+| `assigned_chat_id` | BigInteger | User they were assigned to meet |
+| `created_at` | DateTime | |
+
+### `MatchFeedback` — User response to a feedback request
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | Integer PK | |
+| `assignment_id` | Integer FK→MatchAssignment | CASCADE delete |
+| `response` | String | `"met"` / `"not_met"` / `"planning"` |
+| `created_at` | DateTime | |
 
 ---
 
@@ -240,18 +271,19 @@ SendHub(chat_id)
   └─ Read panel_message_id from HUB_MESSAGES[chat_id] (in-memory)
      or fall back to TgUser.panel_message_id in DB (survives restarts)
   └─ Delete old hub message (if any)
-  └─ Send new hub message with HubKeyboard (Find + Admin buttons)
+  └─ Send new hub message with HubKeyboard
   └─ Store new message_id in both HUB_MESSAGES[chat_id] and TgUser.panel_message_id
 
-Hub navigation (in-place editing of single message):
-  ├─ "Find person" → enters Find FSM
-  ├─ "Admin panel" → edits hub message to show AdminPanel
-  │     └─ sub-panels (Blocking, Admins, Matching) edit same message
-  │     └─ "Back" → edits back to AdminPanel
-  └─ "Back to hub" → edits back to HubKeyboard
+HubKeyboard buttons:
+  ├─ "Find person"         → enters Find FSM
+  ├─ "Matching: On/Off"    → toggles TgUser.matching_paused in-place (edits keyboard only)
+  └─ "Admin panel"         → visible only to admins; edits hub message to AdminPanel
+        └─ sub-panels (Blocking, Admins, Matching) edit same message
+        └─ "Back" → edits back to AdminPanel
+        └─ "Back to hub" → edits back to HubKeyboard
 ```
 
-### 3. Alumni Search (`/find` or hub button)
+### 3. Alumni Search (hub button)
 
 ```
 Find
@@ -264,26 +296,44 @@ Find
                       display NesUser profile for each result
 ```
 
-### 4. Biweekly Matching (scheduled)
+### 4. Manual Matching (admin-triggered)
+
+There is **no automatic scheduler**. An admin must manually trigger each round.
 
 ```
-APScheduler: every odd week, Monday 12:00 MSK
-  └─ GetVerifiedTgUsersChatId() → list of chat_ids
-  └─ MatchUsers(chat_ids)       → random derangement (no self-pairs)
-  └─ For each Pair:
-       Profile.FromNesId(user)  → fetch TgUser + NesUser
-       Profile.FromNesId(match)
-       SendMatchingInfo()       → send each user the other's profile
-       Rate-limited: AsyncLimiter(30/sec)
+Admin → Matching panel → "▶️ Run Matching Now"
+  └─ Notify all OTHER admins: "X started a matching round"
+  └─ Filter eligible users: verified=True, blocked=False, matching_paused=False
+  └─ Get excluded pairs from last 2 rounds (history-aware anti-repetition)
+  └─ MatchUsers():
+       Round 1: derangement avoiding excluded pairs → everyone gets ≥1 assignment
+       Round 2: second derangement (if ≥3 users) avoiding round-1 pairs + excluded
+       Result: each user gets 1 or 2 directed assignments (asymmetric)
+  └─ Save MatchRound + all MatchAssignments to DB
+  └─ Send each user their assigned profiles (i18n, rate-limited 30/sec)
+  └─ Report count to admin
 ```
 
-### 5. Admin Panel (hub button, admin users only)
+### 5. Feedback Collection (admin-triggered)
+
+```
+Admin → Matching panel → "📊 Send Feedback Request"
+  └─ Fetch last MatchRound + its MatchAssignments from DB
+  └─ For each assignment, send assigner:
+       "Did you meet with [name]?" + [✅ Yes] [❌ No] [📅 Planning to] buttons
+  └─ When user clicks → UpsertFeedback(assignment_id, response) stored in DB
+  └─ Report sent count to admin
+```
+
+### 6. Admin Panel (hub button, admin users only)
 
 Requires chat_id to be in `data/admins/admins.json` (checked via `admin_store.Contains()`).
 
 Accessed via Hub → "Admin panel" button (edits hub message in-place).
 
-Actions: Send DM | Broadcast | View messages | Block/Unblock | Manage admins | Control matching schedule | Download logs
+Actions: Download logs | View user messages | Send DM | Broadcast | Block/Unblock | Run Matching / Send Feedback | Manage admins
+
+**Admin change notifications:** When an admin adds or removes another admin, all other admins receive a notification with who performed the action and who was affected.
 
 ---
 
@@ -291,7 +341,7 @@ Actions: Send DM | Broadcast | View messages | Block/Unblock | Manage admins | C
 
 ### `UserContextService`
 
-The **central facade** used by all handlers:
+The **central facade** used by all handlers. Combines `UserService`, `MessageService`, and `MatchingService`.
 
 ```python
 # Created via factory — DO NOT instantiate directly
@@ -304,7 +354,8 @@ await ctx.GetTgUser(chat_id, TgUser.field)  # single column value
 await ctx.UpdateTgUser(chat_id, TgUser.column, value)
 await ctx.GetTgChatIdBy(tg_username="foo")  # lookup by various fields
 await ctx.CheckTgUserExists(chat_id)        # bool
-await ctx.GetVerifiedTgUsersChatId()        # list[int]
+await ctx.GetVerifiedTgUsersChatId()        # list[int] (verified only)
+await ctx.GetTgUsersOnCondition(condition, column)  # flexible filter
 
 # NesUser operations
 await ctx.GetNesUser(nes_id)
@@ -314,6 +365,14 @@ await ctx.UpsertNesUser([...])
 await ctx.RegisterIncomingMessage(message)
 await ctx.RegisterOutgoingMessage(message)
 await ctx.GetRecentMessages(chat_id, limit=20)
+
+# Matching
+await ctx.CreateRound(triggered_by)                    # → MatchRound
+await ctx.GetLastRound()                               # → MatchRound | None
+await ctx.CreateAssignments(round_id, [(a, b), ...])   # → list[MatchAssignment]
+await ctx.GetAssignmentsByRound(round_id)              # → list[MatchAssignment]
+await ctx.GetRecentExcludedPairs(last_n_rounds=2)      # → set[tuple[int, int]]
+await ctx.UpsertFeedback(assignment_id, response)
 ```
 
 ### Repository Pattern
@@ -327,11 +386,34 @@ TgUserRepository methods:
   - GetTgUsersOnCondition(condition, column=None)
   - GetChatIdBy(tg_username=...|nes_id=...|nes_email=...)
   - UpdateTgUser(chat_id, column, value)
+
+MatchRepository methods:
+  - CreateRound(triggered_by)             → MatchRound
+  - GetLastRound()                        → MatchRound | None
+  - CreateAssignments(round_id, pairs)    → list[MatchAssignment]
+  - GetAssignmentsByRound(round_id)       → list[MatchAssignment]
+  - GetRecentExcludedPairs(last_n_rounds) → set[tuple[int, int]]
+  - UpsertFeedback(assignment_id, response)
 ```
 
 ---
 
 ## Recommendation System Details
+
+### Matching Algorithm (`recsys/matching/assign.py`)
+
+**Entry point:** `RunMatching(triggered_by)` in `schedule.py` → `MatchingPipeline(triggered_by)` in `assign.py`.
+
+**Algorithm:**
+1. Filter eligible pool: `verified=True AND blocked=False AND matching_paused=False`
+2. Fetch excluded pairs from last 2 rounds (history)
+3. **Round 1:** Rejection-sample a derangement avoiding excluded pairs (up to 2000 attempts); fall back to ignoring history if exhausted
+4. **Round 2** (if ≥3 users): another derangement excluding round-1 pairs as well
+5. Result: each user gets 1 assignment (always) + 1 more if round 2 succeeds → **≤2 per user, directed/asymmetric**
+6. Save `MatchRound` + flat list of `MatchAssignment` rows to DB
+7. Send each user their profile list via i18n'd message (`matching.intro`)
+
+The matching is **asymmetric**: if user A is assigned to meet B, B is not necessarily assigned to meet A.
 
 ### OpenSearch Index Schema
 
@@ -384,6 +466,8 @@ text = t(lang, "key.path", name="Alice")
 - `lang` comes from `TgUser.language`
 - Template substitution with `**kwargs` via Python `.format()`
 - Falls back gracefully if key missing
+
+**Key namespaces:** `language.*`, `start.*`, `hub.*`, `find.*`, `admin.*`, `matching.*`, `common.*`, `zero.*`
 
 ---
 
@@ -445,7 +529,7 @@ All services share `nespresso_network` bridge.
 main():
 1. EnsurePaths()              # Create required dirs/files
 2. LoggerStart(LoggerSetup)   # Configure structured logging
-3. EnsureDB()                 # Create PG tables if missing
+3. EnsureDB()                 # Create PG tables if missing (incl. new match tables)
 4. EnsureOpenSearchIndex()    # Create OS index if missing
 5. SetExceptionHandlers()     # Asyncio + Aiogram error handlers
 6. dp.start_polling(bot, drop_pending_updates=True)
@@ -459,14 +543,14 @@ OnStartup() [registered as dp.startup hook]:
 6. SetBotMiddleware(dp)       # Logging middleware
 7. NotifyOnStartup()          # Send "Bot started" to all admins
 8. ProcessPendingUpdates()    # Handle messages received while offline
-9. StartMatching()            # Start APScheduler
 
 OnShutdown() [registered as dp.shutdown hook]:
 1. NotifyOnShutdown()         # Send bot.log to all admins
 2. CloseOpenSearchClient()    # Graceful OpenSearch disconnect
-3. ShutdownMatching()         # Stop APScheduler
-4. LoggerShutdown()           # Flush logs
+3. LoggerShutdown()           # Flush logs
 ```
+
+Note: **No APScheduler** — there is no automatic matching job. Matching is triggered manually by admins.
 
 ---
 
@@ -539,11 +623,12 @@ The handlers for these are in `hub.py` (HubBack) and `admin.py` (PanelBack).
 
 - **No test suite** exists. Add tests under `tests/` following pytest-asyncio conventions.
 - **API layer** (`api/routers/nes_user.py`) is a stub — all endpoints are TODOs.
-- **Alembic** is listed as a dependency but no migration files exist yet; schema is created via `EnsureDB()` (metadata.create_all).
+- **Alembic** is listed as a dependency but no migration files exist yet; schema is created via `EnsureDB()` (`metadata.create_all` + explicit `ALTER TABLE IF NOT EXISTS` for columns added to existing tables).
 - The ML model (Alibaba GTE) is downloaded on first run to `data/recsys/embedding/model/` — ensure write permissions and network access.
 - OpenSearch requires the `OPENSEARCH_INITIAL_ADMIN_PASSWORD` env var; TLS is disabled in dev config.
 - Rate limiting for broadcasts uses `AsyncLimiter(30, 1)` — 30 messages per second — to stay within Telegram API limits.
 - `HUB_MESSAGES` is an in-memory cache; `TgUser.panel_message_id` is the persistent DB-backed counterpart used to restore hub state after bot restarts.
+- **Matching feedback analytics** (aggregating/displaying `MatchFeedback` responses) is not yet implemented — data is stored but no reporting UI exists.
 
 ---
 
@@ -554,11 +639,15 @@ The handlers for these are in `hub.py` (HubBack) and `admin.py` (PanelBack).
 | `chat_id` | Telegram user/chat identifier (BigInteger) |
 | `nes_id` | NES alumni database ID |
 | `verified` | User completed full registration flow |
+| `matching_paused` | User opted out of matching rounds via hub toggle |
 | `mynes` | NES alumni self-description side in OpenSearch |
 | `cv` | CV/work experience side in OpenSearch |
 | `ScrollingSearch` | Stateful paginated search session |
 | `UserContextService` | Unified service facade used by handlers |
 | `AdminStore` | JSON-backed persistent list of admin chat IDs |
-| `derangement` | Permutation where no element maps to itself (matching algo) |
+| `derangement` | Permutation where no element maps to itself (used in matching) |
+| `MatchRound` | DB record of a single admin-triggered matching run |
+| `MatchAssignment` | A single directed `(assigner → assigned)` pair within a round |
+| `MatchFeedback` | User's response to a feedback request for a given assignment |
 | `panel_message_id` | DB-persisted hub message ID; enables hub deletion across bot restarts |
 | `HUB_MESSAGES` | In-memory `dict[chat_id → message_id]` for fast hub message tracking |
