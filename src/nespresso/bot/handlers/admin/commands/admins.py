@@ -15,7 +15,7 @@ from nespresso.bot.lib.hub_state import HUB_MESSAGES
 from nespresso.bot.lib.message.i18n import GetUserLanguage, t
 from nespresso.bot.lib.message.io import ContextIO, PersonalMsg, SendMessage, SendMessagesToGroup
 from nespresso.bot.lifecycle.creator import bot
-from nespresso.core.configs.admin_store import admin_store
+from nespresso.core.configs.admin_store import AddAdmin, GetAdminIds, RemoveAdmin
 from nespresso.db.models.tg_user import TgUser
 from nespresso.db.services.user_context import GetUserContextService
 
@@ -97,7 +97,7 @@ async def _GetAdminDisplayName(chat_id: int) -> str:
 
 async def _NotifyAdminsAboutChange(actor_chat_id: int, key: str, **kwargs: str) -> None:
     """Send a notification to all admins except the actor."""
-    other_admins = [aid for aid in admin_store.GetIds() if aid != actor_chat_id]
+    other_admins = [aid for aid in await GetAdminIds() if aid != actor_chat_id]
     if not other_admins:
         return
 
@@ -119,7 +119,7 @@ async def _NotifyAdminsAboutChange(actor_chat_id: int, key: str, **kwargs: str) 
 
 
 async def BuildAdminsPanelText(lang: str) -> str:
-    ids = admin_store.GetIds()
+    ids = await GetAdminIds()
     if not ids:
         admins_section = t(lang, "admin.admins_no_admins")
     else:
@@ -195,7 +195,7 @@ async def AdminsPanelAddUsername(message: types.Message, state: FSMContext) -> N
         )
         return
 
-    added = admin_store.Add(chat_id)
+    added = await AddAdmin(chat_id)
     await state.clear()
 
     if not added:
@@ -250,7 +250,7 @@ async def AdminsPanelRemoveUsername(message: types.Message, state: FSMContext) -
         )
         return
 
-    removed = admin_store.Remove(chat_id)
+    removed = await RemoveAdmin(chat_id)
     await state.clear()
 
     if not removed:

@@ -76,13 +76,15 @@ async def AboutBackCallback(
 
     chat_id = callback_query.message.chat.id
     lang = await GetUserLanguage(chat_id)
+    ctx = await GetUserContextService()
+    is_admin = await ctx.GetTgUser(chat_id, TgUser.is_admin) or False
 
     from nespresso.bot.handlers.client.commands.hub import HubKeyboard
 
     try:
         await callback_query.message.edit_text(
             text=t(lang, "hub.welcome"),
-            reply_markup=HubKeyboard(chat_id, lang),
+            reply_markup=HubKeyboard(lang, is_admin),
         )
     except TelegramBadRequest:
         pass

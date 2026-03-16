@@ -10,7 +10,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from nespresso.bot.handlers.admin.commands.back import BackToAdminPanelCallbackData
 from nespresso.bot.lib.message.i18n import GetUserLanguage, t
 from nespresso.bot.lib.message.io import PersonalMsg, SendMessage, SendMessagesToGroup
-from nespresso.core.configs.admin_store import admin_store
+from nespresso.core.configs.admin_store import GetAdminIds
 from nespresso.db.services.user_context import GetUserContextService
 from nespresso.recsys.matching.schedule import RunMatching
 
@@ -65,7 +65,7 @@ def ShowMatchingPanel(lang: str) -> dict[str, Any]:
 
 
 async def _NotifyOtherAdmins(actor_chat_id: int, key: str, **kwargs: Any) -> None:
-    other_admins = [aid for aid in admin_store.GetIds() if aid != actor_chat_id]
+    other_admins = [aid for aid in await GetAdminIds() if aid != actor_chat_id]
     if not other_admins:
         return
 

@@ -53,6 +53,14 @@ class UserService:
 
         return result
 
+    async def GetAdminChatIds(self) -> list[int]:
+        result = await self.GetTgUsersOnCondition(
+            condition=TgUser.is_admin,
+            column=TgUser.chat_id,
+        )
+
+        return result
+
     # --- Update ---
 
     # --- Delete ---

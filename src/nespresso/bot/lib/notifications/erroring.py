@@ -9,12 +9,12 @@ from aiogram.types.error_event import ErrorEvent
 
 from nespresso.bot.lib.message.io import ContextIO, SendDocument, SendMessage
 from nespresso.bot.lifecycle.creator import BOT_ID, dp
-from nespresso.core.configs.admin_store import admin_store
+from nespresso.core.configs.admin_store import GetAdminIds
 from nespresso.core.configs.paths import PATH_BOT_LOGS
 
 
 async def NotifyAdminsOfError(exc: BaseException) -> None:
-    for admin in admin_store.GetIds():
+    for admin in await GetAdminIds():
         await SendDocument(
             chat_id=admin,
             document=types.FSInputFile(PATH_BOT_LOGS),

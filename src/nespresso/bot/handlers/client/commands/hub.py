@@ -13,7 +13,6 @@ from nespresso.bot.lib.hub_state import HUB_MESSAGES
 from nespresso.bot.lib.message.i18n import GetUserLanguage, t
 from nespresso.bot.lib.message.io import SendMessage
 from nespresso.bot.lifecycle.creator import bot
-from nespresso.core.configs.admin_store import admin_store
 from nespresso.db.models.tg_user import TgUser
 from nespresso.db.services.user_context import GetUserContextService
 
@@ -31,7 +30,7 @@ class HubCallbackData(CallbackData, prefix="hub"):
     action: HubAction
 
 
-def HubKeyboard(chat_id: int, lang: str) -> InlineKeyboardMarkup:
+def HubKeyboard(lang: str, is_admin: bool) -> InlineKeyboardMarkup:
     buttons: list[list[InlineKeyboardButton]] = [
         [
             InlineKeyboardButton(
@@ -52,7 +51,7 @@ def HubKeyboard(chat_id: int, lang: str) -> InlineKeyboardMarkup:
             )
         ],
     ]
-    if admin_store.Contains(chat_id):
+    if is_admin:
         buttons.append(
             [
                 InlineKeyboardButton(
@@ -83,10 +82,11 @@ async def SendHub(chat_id: int) -> None:
                 exc_info=True,
             )
 
+    is_admin = await ctx.GetTgUser(chat_id, TgUser.is_admin) or False
     msg = await SendMessage(
         chat_id=chat_id,
         text=t(lang, "hub.welcome"),
-        reply_markup=HubKeyboard(chat_id, lang),
+        reply_markup=HubKeyboard(lang, is_admin),
     )
     if msg is not None:
         HUB_MESSAGES[chat_id] = msg.message_id
@@ -116,7 +116,9 @@ async def HubAdminCallback(callback_query: types.CallbackQuery) -> None:
     await callback_query.answer()
 
     chat_id = callback_query.message.chat.id
-    if not admin_store.Contains(chat_id):
+    ctx = await GetUserContextService()
+    is_admin = await ctx.GetTgUser(chat_id, TgUser.is_admin) or False
+    if not is_admin:
         return
 
     # Lazy import to avoid circular dependency
@@ -176,10 +178,12 @@ async def HubBack(callback_query: types.CallbackQuery, state: FSMContext) -> Non
 
     chat_id = callback_query.message.chat.id
     lang = await GetUserLanguage(chat_id)
+    ctx = await GetUserContextService()
+    is_admin = await ctx.GetTgUser(chat_id, TgUser.is_admin) or False
     try:
         await callback_query.message.edit_text(
             text=t(lang, "hub.welcome"),
-            reply_markup=HubKeyboard(chat_id, lang),
+            reply_markup=HubKeyboard(lang, is_admin),
         )
     except TelegramBadRequest:
         pass
