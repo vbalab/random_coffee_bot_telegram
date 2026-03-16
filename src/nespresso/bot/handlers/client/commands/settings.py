@@ -1,0 +1,207 @@
+from enum import Enum
+
+from aiogram import F, Router, types
+from aiogram.exceptions import TelegramBadRequest
+from aiogram.filters.callback_data import CallbackData
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+from nespresso.bot.lib.message.i18n import GetUserLanguage, SetUserLanguage, t
+from nespresso.bot.lib.message.io import SendMessage
+from nespresso.core.configs.admin_store import admin_store
+from nespresso.db.models.tg_user import TgUser
+from nespresso.db.services.user_context import GetUserContextService
+
+router = Router()
+
+
+class SettingsAction(str, Enum):
+    ToggleMatching = "toggle_matching"
+    ChangeLanguage = "change_language"
+    Help = "help"
+    Back = "back"
+
+
+class SettingsCallbackData(CallbackData, prefix="settings"):
+    action: SettingsAction
+
+
+class HelpAction(str, Enum):
+    AskHelp = "ask"
+    Back = "back"
+
+
+class HelpCallbackData(CallbackData, prefix="help"):
+    action: HelpAction
+
+
+def BuildSettingsPanelContent(
+    lang: str, matching_paused: bool
+) -> tuple[str, InlineKeyboardMarkup]:
+    matching_label = (
+        t(lang, "hub.matching_paused") if matching_paused else t(lang, "hub.matching_active")
+    )
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=matching_label,
+                    callback_data=SettingsCallbackData(
+                        action=SettingsAction.ToggleMatching
+                    ).pack(),
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=t(lang, "settings.button_language"),
+                    callback_data=SettingsCallbackData(
+                        action=SettingsAction.ChangeLanguage
+                    ).pack(),
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=t(lang, "settings.button_help"),
+                    callback_data=SettingsCallbackData(action=SettingsAction.Help).pack(),
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=t(lang, "settings.button_back"),
+                    callback_data=SettingsCallbackData(action=SettingsAction.Back).pack(),
+                )
+            ],
+        ]
+    )
+    return t(lang, "settings.panel_header"), keyboard
+
+
+def BuildHelpPanelContent(lang: str) -> tuple[str, InlineKeyboardMarkup]:
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=t(lang, "help.button_ask"),
+                    callback_data=HelpCallbackData(action=HelpAction.AskHelp).pack(),
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=t(lang, "help.button_back"),
+                    callback_data=HelpCallbackData(action=HelpAction.Back).pack(),
+                )
+            ],
+        ]
+    )
+    return t(lang, "help.panel_header"), keyboard
+
+
+@router.callback_query(SettingsCallbackData.filter(F.action == SettingsAction.ToggleMatching))
+async def SettingsToggleMatching(callback_query: types.CallbackQuery) -> None:
+    assert isinstance(callback_query.message, types.Message)
+    await callback_query.answer()
+
+    chat_id = callback_query.from_user.id
+    lang = await GetUserLanguage(chat_id)
+    ctx = await GetUserContextService()
+
+    current = await ctx.GetTgUser(chat_id, TgUser.matching_paused) or False
+    new_value = not current
+    await ctx.UpdateTgUser(chat_id, TgUser.matching_paused, new_value)
+
+    _, keyboard = BuildSettingsPanelContent(lang, matching_paused=new_value)
+    try:
+        await callback_query.message.edit_reply_markup(reply_markup=keyboard)
+    except TelegramBadRequest:
+        pass
+
+
+@router.callback_query(SettingsCallbackData.filter(F.action == SettingsAction.ChangeLanguage))
+async def SettingsChangeLanguage(callback_query: types.CallbackQuery) -> None:
+    assert isinstance(callback_query.message, types.Message)
+    await callback_query.answer()
+
+    chat_id = callback_query.from_user.id
+    lang = await GetUserLanguage(chat_id)
+
+    new_lang = "ru" if lang == "en" else "en"
+    await SetUserLanguage(chat_id, new_lang)
+
+    ctx = await GetUserContextService()
+    matching_paused = await ctx.GetTgUser(chat_id, TgUser.matching_paused) or False
+
+    text, keyboard = BuildSettingsPanelContent(new_lang, matching_paused=matching_paused)
+    try:
+        await callback_query.message.edit_text(text=text, reply_markup=keyboard)
+    except TelegramBadRequest:
+        pass
+
+
+@router.callback_query(SettingsCallbackData.filter(F.action == SettingsAction.Help))
+async def SettingsHelpCallback(callback_query: types.CallbackQuery) -> None:
+    assert isinstance(callback_query.message, types.Message)
+    await callback_query.answer()
+
+    chat_id = callback_query.from_user.id
+    lang = await GetUserLanguage(chat_id)
+
+    text, keyboard = BuildHelpPanelContent(lang)
+    try:
+        await callback_query.message.edit_text(text=text, reply_markup=keyboard)
+    except TelegramBadRequest:
+        pass
+
+
+@router.callback_query(SettingsCallbackData.filter(F.action == SettingsAction.Back))
+async def SettingsBackCallback(callback_query: types.CallbackQuery) -> None:
+    assert isinstance(callback_query.message, types.Message)
+    await callback_query.answer()
+
+    chat_id = callback_query.message.chat.id
+    lang = await GetUserLanguage(chat_id)
+
+    from nespresso.bot.handlers.client.commands.hub import HubKeyboard
+
+    try:
+        await callback_query.message.edit_text(
+            text=t(lang, "hub.welcome"),
+            reply_markup=HubKeyboard(chat_id, lang),
+        )
+    except TelegramBadRequest:
+        pass
+
+
+@router.callback_query(HelpCallbackData.filter(F.action == HelpAction.AskHelp))
+async def HelpAskCallback(callback_query: types.CallbackQuery) -> None:
+    assert isinstance(callback_query.message, types.Message)
+    await callback_query.answer()
+
+    chat_id = callback_query.from_user.id
+    lang = await GetUserLanguage(chat_id)
+    ctx = await GetUserContextService()
+
+    user = await ctx.GetTgUser(chat_id)
+    username = f"@{user.username}" if user and user.username else str(chat_id)
+
+    for admin_id in admin_store.GetIds():
+        admin_lang = await GetUserLanguage(admin_id)
+        notification = t(admin_lang, "help.admin_notification", username=username, chat_id=chat_id)
+        await SendMessage(chat_id=admin_id, text=notification)
+
+    await SendMessage(chat_id=chat_id, text=t(lang, "help.request_sent"))
+
+
+@router.callback_query(HelpCallbackData.filter(F.action == HelpAction.Back))
+async def HelpBackCallback(callback_query: types.CallbackQuery) -> None:
+    assert isinstance(callback_query.message, types.Message)
+    await callback_query.answer()
+
+    chat_id = callback_query.from_user.id
+    lang = await GetUserLanguage(chat_id)
+    ctx = await GetUserContextService()
+    matching_paused = await ctx.GetTgUser(chat_id, TgUser.matching_paused) or False
+
+    text, keyboard = BuildSettingsPanelContent(lang, matching_paused=matching_paused)
+    try:
+        await callback_query.message.edit_text(text=text, reply_markup=keyboard)
+    except TelegramBadRequest:
+        pass

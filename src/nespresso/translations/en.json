@@ -29,9 +29,21 @@
   "hub.welcome": "👋 Welcome!\n\nChoose what you'd like to do:",
   "hub.find_person": "🔍 Find Person",
   "hub.my_about": "📝 My About",
+  "hub.settings": "⚙️ Settings",
   "hub.admin_panel": "⚙️ Admin Panel",
   "hub.matching_active": "🔔 Matching: On",
   "hub.matching_paused": "🔕 Matching: Off",
+
+  "settings.panel_header": "⚙️ Settings\n\nManage your preferences:",
+  "settings.button_language": "🌐 Change Language",
+  "settings.button_help": "❓ Help",
+  "settings.button_back": "⬅️ Back",
+
+  "help.panel_header": "❓ Help\n\nIf you need assistance, you can send a help request to the admins. They will receive your message and get back to you.",
+  "help.button_ask": "📨 Ask for Help",
+  "help.button_back": "⬅️ Back",
+  "help.request_sent": "✅ Your help request has been sent to the admins.",
+  "help.admin_notification": "🆘 Help request from {username} (ID: {chat_id})",
 
   "find.only_registered": "Only registered users can use this feature",
   "find.enter_query": "Type text to search for a person",

@@ -76,15 +76,13 @@ async def AboutBackCallback(
 
     chat_id = callback_query.message.chat.id
     lang = await GetUserLanguage(chat_id)
-    ctx = await GetUserContextService()
-    matching_paused = await ctx.GetTgUser(chat_id, TgUser.matching_paused) or False
 
     from nespresso.bot.handlers.client.commands.hub import HubKeyboard
 
     try:
         await callback_query.message.edit_text(
             text=t(lang, "hub.welcome"),
-            reply_markup=HubKeyboard(chat_id, lang, matching_paused=matching_paused),
+            reply_markup=HubKeyboard(chat_id, lang),
         )
     except TelegramBadRequest:
         pass

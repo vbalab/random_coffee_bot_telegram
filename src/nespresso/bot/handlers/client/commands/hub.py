@@ -23,20 +23,15 @@ router = Router()
 class HubAction(str, Enum):
     Find = "find"
     Admin = "admin"
-    ToggleMatching = "toggle_matching"
     About = "about"
+    Settings = "settings"
 
 
 class HubCallbackData(CallbackData, prefix="hub"):
     action: HubAction
 
 
-def HubKeyboard(
-    chat_id: int, lang: str, matching_paused: bool = False
-) -> InlineKeyboardMarkup:
-    matching_label = (
-        t(lang, "hub.matching_paused") if matching_paused else t(lang, "hub.matching_active")
-    )
+def HubKeyboard(chat_id: int, lang: str) -> InlineKeyboardMarkup:
     buttons: list[list[InlineKeyboardButton]] = [
         [
             InlineKeyboardButton(
@@ -52,8 +47,8 @@ def HubKeyboard(
         ],
         [
             InlineKeyboardButton(
-                text=matching_label,
-                callback_data=HubCallbackData(action=HubAction.ToggleMatching).pack(),
+                text=t(lang, "hub.settings"),
+                callback_data=HubCallbackData(action=HubAction.Settings).pack(),
             )
         ],
     ]
@@ -88,11 +83,10 @@ async def SendHub(chat_id: int) -> None:
                 exc_info=True,
             )
 
-    matching_paused = await ctx.GetTgUser(chat_id, TgUser.matching_paused) or False
     msg = await SendMessage(
         chat_id=chat_id,
         text=t(lang, "hub.welcome"),
-        reply_markup=HubKeyboard(chat_id, lang, matching_paused=matching_paused),
+        reply_markup=HubKeyboard(chat_id, lang),
     )
     if msg is not None:
         HUB_MESSAGES[chat_id] = msg.message_id
@@ -136,23 +130,21 @@ async def HubAdminCallback(callback_query: types.CallbackQuery) -> None:
         pass
 
 
-@router.callback_query(HubCallbackData.filter(F.action == HubAction.ToggleMatching))
-async def HubToggleMatching(callback_query: types.CallbackQuery) -> None:
+@router.callback_query(HubCallbackData.filter(F.action == HubAction.Settings))
+async def HubSettingsCallback(callback_query: types.CallbackQuery) -> None:
     assert isinstance(callback_query.message, types.Message)
     await callback_query.answer()
 
     chat_id = callback_query.from_user.id
     lang = await GetUserLanguage(chat_id)
     ctx = await GetUserContextService()
+    matching_paused = await ctx.GetTgUser(chat_id, TgUser.matching_paused) or False
 
-    current = await ctx.GetTgUser(chat_id, TgUser.matching_paused) or False
-    new_value = not current
-    await ctx.UpdateTgUser(chat_id, TgUser.matching_paused, new_value)
+    from nespresso.bot.handlers.client.commands.settings import BuildSettingsPanelContent
 
+    text, keyboard = BuildSettingsPanelContent(lang, matching_paused=matching_paused)
     try:
-        await callback_query.message.edit_reply_markup(
-            reply_markup=HubKeyboard(chat_id, lang, matching_paused=new_value)
-        )
+        await callback_query.message.edit_text(text=text, reply_markup=keyboard)
     except TelegramBadRequest:
         pass
 
@@ -184,12 +176,10 @@ async def HubBack(callback_query: types.CallbackQuery, state: FSMContext) -> Non
 
     chat_id = callback_query.message.chat.id
     lang = await GetUserLanguage(chat_id)
-    ctx = await GetUserContextService()
-    matching_paused = await ctx.GetTgUser(chat_id, TgUser.matching_paused) or False
     try:
         await callback_query.message.edit_text(
             text=t(lang, "hub.welcome"),
-            reply_markup=HubKeyboard(chat_id, lang, matching_paused=matching_paused),
+            reply_markup=HubKeyboard(chat_id, lang),
         )
     except TelegramBadRequest:
         pass
