@@ -30,6 +30,7 @@ from nespresso.bot.lib.message.io import (
 )
 from nespresso.bot.lifecycle.creator import bot
 from nespresso.core.configs.paths import PATH_BOT_LOGS
+from nespresso.db.models.tg_user import TgUser
 from nespresso.db.services.user_context import GetUserContextService
 
 router = Router()
@@ -102,6 +103,10 @@ async def ShowAdminPanel(chat_id: int) -> None:
     text, keyboard = BuildAdminPanelContent(lang)
 
     hub_msg_id = HUB_MESSAGES.get(chat_id)
+    if hub_msg_id is None:
+        ctx = await GetUserContextService()
+        hub_msg_id = await ctx.GetTgUser(chat_id, TgUser.panel_message_id)
+
     if hub_msg_id is not None:
         try:
             await bot.edit_message_text(
@@ -114,7 +119,11 @@ async def ShowAdminPanel(chat_id: int) -> None:
         except TelegramBadRequest:
             pass
 
-    await SendMessage(chat_id=chat_id, text=text, reply_markup=keyboard)
+    msg = await SendMessage(chat_id=chat_id, text=text, reply_markup=keyboard)
+    if msg is not None:
+        HUB_MESSAGES[chat_id] = msg.message_id
+        ctx = await GetUserContextService()
+        await ctx.UpdateTgUser(chat_id=chat_id, column=TgUser.panel_message_id, value=msg.message_id)
 
 
 # --- Back to Admin Panel ---
