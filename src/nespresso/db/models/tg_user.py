@@ -69,6 +69,11 @@ class TgUser(Base):
         default=False,
         nullable=False,
     )
+    matching_paused: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
 
     # --- time ---
 

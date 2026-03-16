@@ -1,6 +1,7 @@
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+import nespresso.db.models  # noqa: F401 — ensure all models are registered with Base.metadata
 from nespresso.core.configs.settings import settings
 from nespresso.db.base import Base
 
@@ -24,4 +25,9 @@ async def EnsureDB() -> None:
         await conn.run_sync(Base.metadata.create_all)
         await conn.execute(
             text("ALTER TABLE tg_user ADD COLUMN IF NOT EXISTS language VARCHAR")
+        )
+        await conn.execute(
+            text(
+                "ALTER TABLE tg_user ADD COLUMN IF NOT EXISTS matching_paused BOOLEAN NOT NULL DEFAULT FALSE"
+            )
         )
