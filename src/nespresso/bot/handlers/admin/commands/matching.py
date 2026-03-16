@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from enum import Enum
 from typing import Any
 
@@ -7,100 +9,205 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from nespresso.bot.handlers.admin.commands.back import BackToAdminPanelCallbackData
 from nespresso.bot.lib.message.i18n import GetUserLanguage, t
-from nespresso.recsys.matching.schedule import (
-    GetNextMatchingTime,
-    PauseMatching,
-    ResumeMatching,
-)
+from nespresso.bot.lib.message.io import PersonalMsg, SendMessage, SendMessagesToGroup
+from nespresso.core.configs.admin_store import admin_store
+from nespresso.db.services.user_context import GetUserContextService
+from nespresso.recsys.matching.schedule import RunMatching
 
 router = Router()
 
 
 class MatchingAction(str, Enum):
-    Pause = "pause"
-    Resume = "resume"
-    Leave = "leave"
+    Run = "run"
+    Feedback = "feedback"
 
 
 class MatchingCallbackData(CallbackData, prefix="matching"):
     action: MatchingAction
 
 
-def MatchingKeyboard(lang: str, actions: list[MatchingAction]) -> InlineKeyboardMarkup:
-    _labels = {
-        MatchingAction.Pause: "admin.matching_button_pause",
-        MatchingAction.Resume: "admin.matching_button_resume",
-        MatchingAction.Leave: "admin.matching_button_leave",
-    }
+class FeedbackCallbackData(CallbackData, prefix="match_fb"):
+    assignment_id: int
+    response: str
 
-    def Button(action: MatchingAction) -> InlineKeyboardButton:
-        return InlineKeyboardButton(
-            text=t(lang, _labels[action]),
-            callback_data=MatchingCallbackData(action=action).pack(),
-        )
 
+def MatchingKeyboard(lang: str) -> InlineKeyboardMarkup:
     back_button = InlineKeyboardButton(
         text=t(lang, "admin.button_back"),
         callback_data=BackToAdminPanelCallbackData().pack(),
     )
-
     return InlineKeyboardMarkup(
-        inline_keyboard=[[Button(a) for a in actions], [back_button]]
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=t(lang, "admin.matching_button_run"),
+                    callback_data=MatchingCallbackData(action=MatchingAction.Run).pack(),
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=t(lang, "admin.matching_button_feedback"),
+                    callback_data=MatchingCallbackData(
+                        action=MatchingAction.Feedback
+                    ).pack(),
+                )
+            ],
+            [back_button],
+        ]
     )
 
 
 def ShowMatchingPanel(lang: str) -> dict[str, Any]:
-    """Return kwargs for edit_text to display the matching panel."""
-    next_run_time = GetNextMatchingTime()
-
-    if next_run_time is None:
-        text = t(lang, "admin.matching_paused")
-        keyboard = MatchingKeyboard(lang, [MatchingAction.Resume, MatchingAction.Leave])
-    else:
-        text = t(lang, "admin.matching_active", next_run=next_run_time.isoformat())
-        keyboard = MatchingKeyboard(lang, [MatchingAction.Pause, MatchingAction.Leave])
-
-    return {"text": text, "reply_markup": keyboard}
+    return {
+        "text": t(lang, "admin.matching_header"),
+        "reply_markup": MatchingKeyboard(lang),
+    }
 
 
-@router.callback_query(MatchingCallbackData.filter(F.action == MatchingAction.Resume))
-async def CommandMatchingResume(callback_query: types.CallbackQuery) -> None:
+async def _NotifyOtherAdmins(actor_chat_id: int, key: str, **kwargs: Any) -> None:
+    other_admins = [aid for aid in admin_store.GetIds() if aid != actor_chat_id]
+    if not other_admins:
+        return
+
+    actor_lang = await GetUserLanguage(actor_chat_id)
+    actor_name = f"[{actor_chat_id}]"
+    try:
+        from nespresso.bot.lib.chat.username import GetTgUsername
+        username = await GetTgUsername(actor_chat_id)
+        if username:
+            actor_name = f"@{username}"
+    except Exception:
+        pass
+
+    messages: list[PersonalMsg] = []
+    for admin_id in other_admins:
+        lang = await GetUserLanguage(admin_id)
+        text = t(lang, key, actor=actor_name, **kwargs)
+        messages.append(PersonalMsg(chat_id=admin_id, text=text))
+
+    await SendMessagesToGroup(messages)
+
+
+@router.callback_query(MatchingCallbackData.filter(F.action == MatchingAction.Run))
+async def CommandMatchingRun(callback_query: types.CallbackQuery) -> None:
     assert isinstance(callback_query.message, types.Message)
+    await callback_query.answer()
 
-    ResumeMatching()
-    next_run = GetNextMatchingTime()
-    assert next_run is not None
+    chat_id = callback_query.from_user.id
+    lang = await GetUserLanguage(chat_id)
 
-    lang = await GetUserLanguage(callback_query.from_user.id)
-    await callback_query.message.edit_text(
-        text=t(lang, "admin.matching_resumed", next_run=next_run.isoformat()),
-        reply_markup=MatchingKeyboard(
-            lang, [MatchingAction.Pause, MatchingAction.Leave]
-        ),
+    await SendMessage(chat_id=chat_id, text=t(lang, "admin.matching_running"))
+
+    # Notify other admins that this admin started matching
+    asyncio.create_task(_NotifyOtherAdmins(chat_id, "admin.matching_notify_started"))
+
+    try:
+        participants = await RunMatching(triggered_by=chat_id)
+        await SendMessage(
+            chat_id=chat_id,
+            text=t(lang, "admin.matching_done", count=participants),
+        )
+    except Exception:
+        logging.exception("MatchingPipeline failed")
+        await SendMessage(chat_id=chat_id, text=t(lang, "admin.matching_failed"))
+
+
+@router.callback_query(MatchingCallbackData.filter(F.action == MatchingAction.Feedback))
+async def CommandMatchingFeedback(callback_query: types.CallbackQuery) -> None:
+    assert isinstance(callback_query.message, types.Message)
+    await callback_query.answer()
+
+    chat_id = callback_query.from_user.id
+    lang = await GetUserLanguage(chat_id)
+
+    ctx = await GetUserContextService()
+    last_round = await ctx.GetLastRound()
+
+    if last_round is None:
+        await SendMessage(chat_id=chat_id, text=t(lang, "admin.matching_no_rounds"))
+        return
+
+    assignments = await ctx.GetAssignmentsByRound(round_id=last_round.id)
+    if not assignments:
+        await SendMessage(chat_id=chat_id, text=t(lang, "admin.matching_no_assignments"))
+        return
+
+    # Group assignments by assigner
+    by_assigner: dict[int, list] = {}
+    for a in assignments:
+        by_assigner.setdefault(a.assigner_chat_id, []).append(a)
+
+    sent = 0
+    for assigner_chat_id, user_assignments in by_assigner.items():
+        user_lang = await GetUserLanguage(assigner_chat_id)
+        for assignment in user_assignments:
+            assigned_chat_id = assignment.assigned_chat_id
+            # Get a display name for the assigned user
+            display = str(assigned_chat_id)
+            try:
+                from nespresso.bot.lib.chat.username import GetTgUsername
+                username = await GetTgUsername(assigned_chat_id)
+                if username:
+                    display = f"@{username}"
+            except Exception:
+                pass
+
+            keyboard = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text=t(user_lang, "matching.feedback_met"),
+                            callback_data=FeedbackCallbackData(
+                                assignment_id=assignment.id, response="met"
+                            ).pack(),
+                        ),
+                        InlineKeyboardButton(
+                            text=t(user_lang, "matching.feedback_not_met"),
+                            callback_data=FeedbackCallbackData(
+                                assignment_id=assignment.id, response="not_met"
+                            ).pack(),
+                        ),
+                        InlineKeyboardButton(
+                            text=t(user_lang, "matching.feedback_planning"),
+                            callback_data=FeedbackCallbackData(
+                                assignment_id=assignment.id, response="planning"
+                            ).pack(),
+                        ),
+                    ]
+                ]
+            )
+            await SendMessage(
+                chat_id=assigner_chat_id,
+                text=t(user_lang, "matching.feedback_question", name=display),
+                reply_markup=keyboard,
+            )
+            sent += 1
+
+    await SendMessage(
+        chat_id=chat_id,
+        text=t(lang, "admin.matching_feedback_sent", count=sent),
     )
-    await callback_query.answer(t(lang, "admin.matching_answer_resumed"))
 
 
-@router.callback_query(MatchingCallbackData.filter(F.action == MatchingAction.Pause))
-async def CommandMatchingPause(callback_query: types.CallbackQuery) -> None:
+@router.callback_query(FeedbackCallbackData.filter())
+async def HandleFeedbackResponse(
+    callback_query: types.CallbackQuery, callback_data: FeedbackCallbackData
+) -> None:
     assert isinstance(callback_query.message, types.Message)
 
-    PauseMatching()
+    chat_id = callback_query.from_user.id
+    lang = await GetUserLanguage(chat_id)
 
-    lang = await GetUserLanguage(callback_query.from_user.id)
-    await callback_query.message.edit_text(
-        text=t(lang, "admin.matching_paused_confirmed"),
-        reply_markup=MatchingKeyboard(
-            lang, [MatchingAction.Resume, MatchingAction.Leave]
-        ),
+    ctx = await GetUserContextService()
+    await ctx.UpsertFeedback(
+        assignment_id=callback_data.assignment_id,
+        response=callback_data.response,
     )
-    await callback_query.answer(t(lang, "admin.matching_answer_paused"))
 
+    # Remove the keyboard after response
+    try:
+        await callback_query.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
 
-@router.callback_query(MatchingCallbackData.filter(F.action == MatchingAction.Leave))
-async def CommandMatchingCancel(callback_query: types.CallbackQuery) -> None:
-    assert isinstance(callback_query.message, types.Message)
-
-    lang = await GetUserLanguage(callback_query.from_user.id)
-    await callback_query.message.edit_reply_markup(reply_markup=None)
-    await callback_query.answer(t(lang, "admin.matching_answer_leave"))
+    await callback_query.answer(t(lang, "matching.feedback_thanks"))

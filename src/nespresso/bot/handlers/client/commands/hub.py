@@ -23,20 +23,32 @@ router = Router()
 class HubAction(str, Enum):
     Find = "find"
     Admin = "admin"
+    ToggleMatching = "toggle_matching"
 
 
 class HubCallbackData(CallbackData, prefix="hub"):
     action: HubAction
 
 
-def HubKeyboard(chat_id: int, lang: str) -> InlineKeyboardMarkup:
+def HubKeyboard(
+    chat_id: int, lang: str, matching_paused: bool = False
+) -> InlineKeyboardMarkup:
+    matching_label = (
+        t(lang, "hub.matching_paused") if matching_paused else t(lang, "hub.matching_active")
+    )
     buttons: list[list[InlineKeyboardButton]] = [
         [
             InlineKeyboardButton(
                 text=t(lang, "hub.find_person"),
                 callback_data=HubCallbackData(action=HubAction.Find).pack(),
             )
-        ]
+        ],
+        [
+            InlineKeyboardButton(
+                text=matching_label,
+                callback_data=HubCallbackData(action=HubAction.ToggleMatching).pack(),
+            )
+        ],
     ]
     if admin_store.Contains(chat_id):
         buttons.append(
@@ -53,11 +65,11 @@ def HubKeyboard(chat_id: int, lang: str) -> InlineKeyboardMarkup:
 async def SendHub(chat_id: int) -> None:
     """Delete the old hub message (if any) and send a fresh one."""
     lang = await GetUserLanguage(chat_id)
+    ctx = await GetUserContextService()
 
     # Prefer in-memory cache; fall back to DB (survives bot restarts)
     old_id = HUB_MESSAGES.get(chat_id)
     if old_id is None:
-        ctx = await GetUserContextService()
         old_id = await ctx.GetTgUser(chat_id, TgUser.panel_message_id)
 
     if old_id is not None:
@@ -69,14 +81,14 @@ async def SendHub(chat_id: int) -> None:
                 exc_info=True,
             )
 
+    matching_paused = await ctx.GetTgUser(chat_id, TgUser.matching_paused) or False
     msg = await SendMessage(
         chat_id=chat_id,
         text=t(lang, "hub.welcome"),
-        reply_markup=HubKeyboard(chat_id, lang),
+        reply_markup=HubKeyboard(chat_id, lang, matching_paused=matching_paused),
     )
     if msg is not None:
         HUB_MESSAGES[chat_id] = msg.message_id
-        ctx = await GetUserContextService()
         await ctx.UpdateTgUser(
             chat_id=chat_id, column=TgUser.panel_message_id, value=msg.message_id
         )
@@ -117,6 +129,27 @@ async def HubAdminCallback(callback_query: types.CallbackQuery) -> None:
         pass
 
 
+@router.callback_query(HubCallbackData.filter(F.action == HubAction.ToggleMatching))
+async def HubToggleMatching(callback_query: types.CallbackQuery) -> None:
+    assert isinstance(callback_query.message, types.Message)
+    await callback_query.answer()
+
+    chat_id = callback_query.from_user.id
+    lang = await GetUserLanguage(chat_id)
+    ctx = await GetUserContextService()
+
+    current = await ctx.GetTgUser(chat_id, TgUser.matching_paused) or False
+    new_value = not current
+    await ctx.UpdateTgUser(chat_id, TgUser.matching_paused, new_value)
+
+    try:
+        await callback_query.message.edit_reply_markup(
+            reply_markup=HubKeyboard(chat_id, lang, matching_paused=new_value)
+        )
+    except TelegramBadRequest:
+        pass
+
+
 @router.callback_query(BackToHubCallbackData.filter())
 async def HubBack(callback_query: types.CallbackQuery, state: FSMContext) -> None:
     assert isinstance(callback_query.message, types.Message)
@@ -125,10 +158,12 @@ async def HubBack(callback_query: types.CallbackQuery, state: FSMContext) -> Non
 
     chat_id = callback_query.message.chat.id
     lang = await GetUserLanguage(chat_id)
+    ctx = await GetUserContextService()
+    matching_paused = await ctx.GetTgUser(chat_id, TgUser.matching_paused) or False
     try:
         await callback_query.message.edit_text(
             text=t(lang, "hub.welcome"),
-            reply_markup=HubKeyboard(chat_id, lang),
+            reply_markup=HubKeyboard(chat_id, lang, matching_paused=matching_paused),
         )
     except TelegramBadRequest:
         pass

@@ -10,9 +10,10 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from nespresso.bot.handlers.admin.commands.back import BackToAdminPanelCallbackData
+from nespresso.bot.lib.chat.username import GetTgUsername
 from nespresso.bot.lib.hub_state import HUB_MESSAGES
 from nespresso.bot.lib.message.i18n import GetUserLanguage, t
-from nespresso.bot.lib.message.io import ContextIO, SendMessage
+from nespresso.bot.lib.message.io import ContextIO, PersonalMsg, SendMessage, SendMessagesToGroup
 from nespresso.bot.lifecycle.creator import bot
 from nespresso.core.configs.admin_store import admin_store
 from nespresso.db.models.tg_user import TgUser
@@ -92,6 +93,29 @@ async def _GetAdminDisplayName(chat_id: int) -> str:
         )
 
     return str(chat_id)
+
+
+async def _NotifyAdminsAboutChange(actor_chat_id: int, key: str, **kwargs: str) -> None:
+    """Send a notification to all admins except the actor."""
+    other_admins = [aid for aid in admin_store.GetIds() if aid != actor_chat_id]
+    if not other_admins:
+        return
+
+    actor_name = str(actor_chat_id)
+    try:
+        username = await GetTgUsername(actor_chat_id)
+        if username:
+            actor_name = f"@{username}"
+    except Exception:
+        pass
+
+    messages: list[PersonalMsg] = []
+    for admin_id in other_admins:
+        lang = await GetUserLanguage(admin_id)
+        text = t(lang, key, actor=actor_name, **kwargs)
+        messages.append(PersonalMsg(chat_id=admin_id, text=text))
+
+    await SendMessagesToGroup(messages)
 
 
 async def BuildAdminsPanelText(lang: str) -> str:
@@ -176,6 +200,9 @@ async def AdminsPanelAddUsername(message: types.Message, state: FSMContext) -> N
             chat_id=message.chat.id,
             text=t(lang, "admin.admins_added", username=username),
         )
+        await _NotifyAdminsAboutChange(
+            message.chat.id, "admin.admins_notify_added", target=f"@{username}"
+        )
 
     await ShowAdminsPanel(message.chat.id)
 
@@ -228,6 +255,9 @@ async def AdminsPanelRemoveUsername(message: types.Message, state: FSMContext) -
         await SendMessage(
             chat_id=message.chat.id,
             text=t(lang, "admin.admins_removed", username=username),
+        )
+        await _NotifyAdminsAboutChange(
+            message.chat.id, "admin.admins_notify_removed", target=f"@{username}"
         )
 
     await ShowAdminsPanel(message.chat.id)

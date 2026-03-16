@@ -1,88 +1,157 @@
 import logging
 import random
-from dataclasses import dataclass
 
+from nespresso.bot.lib.message.i18n import GetUserLanguage, t
 from nespresso.bot.lib.message.io import PersonalMsg, SendMessagesToGroup
 from nespresso.db.models.tg_user import TgUser
 from nespresso.db.services.user_context import GetUserContextService
-from nespresso.recsys.matching.emoji import RandomEmoji
 from nespresso.recsys.profile import Profile
 
 
-@dataclass
-class User:
-    chat_id: int
-    emoji: str
+def _CreateDerangement(
+    users: list[int],
+    excluded: set[tuple[int, int]],
+    max_attempts: int = 2000,
+) -> list[int] | None:
+    """
+    Returns a permutation of `users` where:
+      - users[i] != result[i]  (no self-match)
+      - (users[i], result[i]) not in excluded  (no historically repeated pair)
+    Returns None if no valid permutation found within max_attempts.
+    """
+    candidates = users.copy()
+    for _ in range(max_attempts):
+        random.shuffle(candidates)
+        if all(
+            users[i] != candidates[i] and (users[i], candidates[i]) not in excluded
+            for i in range(len(users))
+        ):
+            return candidates
+    return None
 
 
-@dataclass
-class Pair:
-    user: User
-    assigned: User
+def MatchUsers(
+    chat_ids: list[int],
+    excluded_pairs: set[tuple[int, int]] | None = None,
+) -> dict[int, list[int]]:
+    """
+    Asymmetric matching: each user gets 1 or 2 directed assignments.
+    Returns dict[assigner_chat_id -> list[assigned_chat_ids]].
+    """
+    if excluded_pairs is None:
+        excluded_pairs = set()
 
+    n = len(chat_ids)
+    if n < 2:
+        return {cid: [] for cid in chat_ids}
 
-def MatchUsers(chat_ids: list[int]) -> list[Pair]:
-    users: list[User] = [User(chat_id, RandomEmoji()) for chat_id in chat_ids]
-    assigned = users.copy()
+    result: dict[int, list[int]] = {cid: [] for cid in chat_ids}
 
-    if not assigned:
-        return []
+    # First assignment (everyone gets at least 1)
+    first = _CreateDerangement(chat_ids, excluded_pairs)
+    if first is None:
+        # Fallback: ignore history exclusions
+        first = _CreateDerangement(chat_ids, set())
+    if first is None:
+        logging.error("MatchUsers: could not create even a basic derangement")
+        return result
 
-    # 1/3 chance of success
-    while True:
-        random.shuffle(assigned)
+    for i, uid in enumerate(chat_ids):
+        result[uid].append(first[i])
 
-        pairs = zip(users, assigned, strict=True)
-
-        if all(u is not v for u, v in pairs):
-            break
-
-    return [Pair(user=u, assigned=v) for u, v in zip(users, assigned, strict=True)]
-
-
-async def CreateMatching() -> list[Pair]:
-    ctx = await GetUserContextService()
-
-    chat_ids = await ctx.GetVerifiedTgUsersChatId()
-
-    return MatchUsers(chat_ids)
-
-
-async def SendMatchingInfo(pairs: list[Pair]) -> None:
-    ctx = await GetUserContextService()
-
-    messages: list[PersonalMsg] = []
-    for pair in pairs:
-        assigned_nes_id = await ctx.GetTgUser(
-            chat_id=pair.assigned.chat_id,
-            column=TgUser.nes_id,
-        )
-        assert assigned_nes_id is not None
-
-        if assigned_nes_id is None:
-            logging.error(
-                f"chat_id={pair.assigned.chat_id} doesn't have nes_id while participating in matching"
+    # Second assignment (if 3+ users)
+    if n >= 3:
+        # Exclude first-round pairs + historical pairs
+        extended_excluded = excluded_pairs | {
+            (chat_ids[i], first[i]) for i in range(n)
+        }
+        second = _CreateDerangement(chat_ids, extended_excluded)
+        if second is None:
+            # Fallback: only exclude the first round pairs (drop history)
+            second = _CreateDerangement(
+                chat_ids, {(chat_ids[i], first[i]) for i in range(n)}
             )
+        if second is not None:
+            for i, uid in enumerate(chat_ids):
+                result[uid].append(second[i])
+
+    return result
+
+
+async def CreateMatching(triggered_by: int) -> dict[int, list[int]]:
+    """
+    Fetches eligible users, runs asymmetric matching, saves to DB.
+    Returns dict[assigner_chat_id -> list[assigned_chat_ids]].
+    """
+    ctx = await GetUserContextService()
+
+    # Only verified, non-blocked, non-opted-out users
+    all_users = await ctx.GetTgUsersOnCondition(
+        condition=TgUser.verified & ~TgUser.blocked & ~TgUser.matching_paused,
+        column=TgUser.chat_id,
+    )
+
+    excluded = await ctx.GetRecentExcludedPairs(last_n_rounds=2)
+    assignments_map = MatchUsers(all_users, excluded)
+
+    # Flatten to list of (assigner, assigned) tuples
+    flat: list[tuple[int, int]] = [
+        (assigner, assigned)
+        for assigner, assigned_list in assignments_map.items()
+        for assigned in assigned_list
+    ]
+
+    if flat:
+        round_ = await ctx.CreateRound(triggered_by=triggered_by)
+        await ctx.CreateAssignments(round_id=round_.id, assignments=flat)
+        logging.info(
+            f"MatchingRound id={round_.id}: {len(flat)} assignments for {len(all_users)} users"
+        )
+
+    return assignments_map
+
+
+async def SendMatchingInfo(assignments_map: dict[int, list[int]]) -> None:
+    ctx = await GetUserContextService()
+    messages: list[PersonalMsg] = []
+
+    for assigner_chat_id, assigned_list in assignments_map.items():
+        lang = await GetUserLanguage(assigner_chat_id)
+        count = len(assigned_list)
+        if count == 0:
             continue
 
-        profile = await Profile.FromNesId(assigned_nes_id)
-        description = profile.DescribeProfile()
+        intro = t(lang, "matching.intro", count=count)
+        parts = [intro]
 
-        # TODO: add explanation
-        text = f"Hi! You emoji is {pair.user.emoji}\n\n[Explain]\n\n{description}"
+        for assigned_chat_id in assigned_list:
+            assigned_nes_id = await ctx.GetTgUser(
+                chat_id=assigned_chat_id,
+                column=TgUser.nes_id,
+            )
+            if assigned_nes_id is None:
+                logging.error(
+                    f"chat_id={assigned_chat_id} has no nes_id during SendMatchingInfo"
+                )
+                continue
 
-        message = PersonalMsg(chat_id=pair.user.chat_id, text=text)
-        messages.append(message)
+            profile = await Profile.FromNesId(assigned_nes_id)
+            parts.append(profile.DescribeProfile())
+
+        text = "\n\n---\n\n".join(parts)
+        messages.append(PersonalMsg(chat_id=assigner_chat_id, text=text))
 
     await SendMessagesToGroup(messages)
 
 
-async def MatchingPipeline() -> None:
-    logging.info("MatchingPipeline: Actualizing Users")
-    # TODO: send info about matching and that soon there will be matching. this way you'll get data of who have blocked bot
-    # TODO: actualize users
-
-    logging.info("MatchingPipeline: Creating Matching")
-    pairs = await CreateMatching()
-    logging.info("MatchingPipeline: Sending Matching Info")
-    await SendMatchingInfo(pairs)
+async def MatchingPipeline(triggered_by: int) -> int:
+    """
+    Runs the full matching pipeline. Returns number of users matched.
+    """
+    logging.info("MatchingPipeline: creating assignments")
+    assignments_map = await CreateMatching(triggered_by=triggered_by)
+    participants = sum(1 for v in assignments_map.values() if v)
+    logging.info(f"MatchingPipeline: sending info to {participants} users")
+    await SendMatchingInfo(assignments_map)
+    logging.info("MatchingPipeline: done")
+    return participants
