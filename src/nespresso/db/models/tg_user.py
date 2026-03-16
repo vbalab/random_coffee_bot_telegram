@@ -50,6 +50,13 @@ class TgUser(Base):
         nullable=True,
     )
 
+    # --- hub panel ---
+
+    panel_message_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        nullable=True,
+    )
+
     # --- state ---
 
     verified: Mapped[bool] = mapped_column(

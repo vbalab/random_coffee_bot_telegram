@@ -14,6 +14,8 @@ from nespresso.bot.lib.message.i18n import GetUserLanguage, t
 from nespresso.bot.lib.message.io import SendMessage
 from nespresso.bot.lifecycle.creator import bot
 from nespresso.core.configs.admin_store import admin_store
+from nespresso.db.models.tg_user import TgUser
+from nespresso.db.services.user_context import GetUserContextService
 
 router = Router()
 
@@ -52,7 +54,12 @@ async def SendHub(chat_id: int) -> None:
     """Delete the old hub message (if any) and send a fresh one."""
     lang = await GetUserLanguage(chat_id)
 
+    # Prefer in-memory cache; fall back to DB (survives bot restarts)
     old_id = HUB_MESSAGES.get(chat_id)
+    if old_id is None:
+        ctx = await GetUserContextService()
+        old_id = await ctx.GetTgUser(chat_id, TgUser.panel_message_id)
+
     if old_id is not None:
         try:
             await bot.delete_message(chat_id=chat_id, message_id=old_id)
@@ -66,6 +73,8 @@ async def SendHub(chat_id: int) -> None:
     )
     if msg is not None:
         HUB_MESSAGES[chat_id] = msg.message_id
+        ctx = await GetUserContextService()
+        await ctx.UpdateTgUser(chat_id=chat_id, column=TgUser.panel_message_id, value=msg.message_id)
 
 
 @router.callback_query(HubCallbackData.filter(F.action == HubAction.Find))
