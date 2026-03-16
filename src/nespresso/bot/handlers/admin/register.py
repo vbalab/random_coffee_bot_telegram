@@ -10,6 +10,7 @@ from nespresso.bot.handlers.admin.commands import (
     send,
     senda,
     statistics,
+    title,
 )
 
 
@@ -24,4 +25,5 @@ def RegisterAdminHandlers(dp: Dispatcher) -> None:
         blocking.router,
         matching.router,
         statistics.router,
+        title.router,
     )
