@@ -141,8 +141,9 @@ async def PanelBack(callback_query: types.CallbackQuery, state: FSMContext) -> N
     text, keyboard = BuildAdminPanelContent(lang)
     try:
         await callback_query.message.edit_text(text=text, reply_markup=keyboard)
-    except TelegramBadRequest:
-        pass
+    except TelegramBadRequest as e:
+        if "message is not modified" not in str(e):
+            logging.warning(f"Failed to edit back→admin panel for chat_id={callback_query.from_user.id}: {e}")
 
 
 # --- Logs ---
@@ -171,8 +172,9 @@ async def PanelMatching(callback_query: types.CallbackQuery) -> None:
     lang = await GetUserLanguage(callback_query.from_user.id)
     try:
         await callback_query.message.edit_text(**ShowMatchingPanel(lang))
-    except TelegramBadRequest:
-        pass
+    except TelegramBadRequest as e:
+        if "message is not modified" not in str(e):
+            logging.warning(f"Failed to edit admin→matching panel for chat_id={callback_query.from_user.id}: {e}")
 
 
 # --- Send All ---

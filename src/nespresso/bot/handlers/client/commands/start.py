@@ -335,7 +335,7 @@ async def StartAboutWriteNow(
     try:
         await callback_query.message.delete()
     except Exception:
-        pass
+        logging.debug(f"Failed to delete about-prompt message for chat_id={chat_id}", exc_info=True)
 
     await SendMessage(
         chat_id=chat_id,
@@ -355,7 +355,7 @@ async def StartAboutWriteLater(
     try:
         await callback_query.message.delete()
     except Exception:
-        pass
+        logging.debug(f"Failed to delete about-prompt message for chat_id={callback_query.from_user.id}", exc_info=True)
 
     from nespresso.bot.handlers.client.commands.hub import SendHub
 

@@ -77,7 +77,7 @@ async def _NotifyOtherAdmins(actor_chat_id: int, key: str, **kwargs: Any) -> Non
         if username:
             actor_name = f"@{username}"
     except Exception:
-        pass
+        logging.debug(f"Failed to get username for actor chat_id={actor_chat_id}", exc_info=True)
 
     messages: list[PersonalMsg] = []
     for admin_id in other_admins:
@@ -150,7 +150,7 @@ async def CommandMatchingFeedback(callback_query: types.CallbackQuery) -> None:
                 if username:
                     display = f"@{username}"
             except Exception:
-                pass
+                logging.debug(f"Failed to get username for assigned chat_id={assigned_chat_id}", exc_info=True)
 
             keyboard = InlineKeyboardMarkup(
                 inline_keyboard=[
@@ -208,6 +208,6 @@ async def HandleFeedbackResponse(
     try:
         await callback_query.message.edit_reply_markup(reply_markup=None)
     except Exception:
-        pass
+        logging.debug(f"Failed to remove feedback keyboard for chat_id={chat_id}", exc_info=True)
 
     await callback_query.answer(t(lang, "matching.feedback_thanks"))

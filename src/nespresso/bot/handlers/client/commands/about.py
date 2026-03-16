@@ -1,3 +1,4 @@
+import logging
 from enum import Enum
 
 from aiogram import F, Router, types
@@ -87,8 +88,9 @@ async def AboutBackCallback(
             text=t(lang, "hub.welcome"),
             reply_markup=HubKeyboard(lang, is_admin),
         )
-    except TelegramBadRequest:
-        pass
+    except TelegramBadRequest as e:
+        if "message is not modified" not in str(e):
+            logging.warning(f"Failed to edit about→hub for chat_id={chat_id}: {e}")
 
 
 @router.message(AboutStates.WriteAbout, F.content_type == "text")
