@@ -11,6 +11,8 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from nespresso.bot.lib.message.i18n import GetUserLanguage, t
 from nespresso.bot.lib.message.io import ContextIO, SendMessage
+from nespresso.db.models.tg_user import TgUser
+from nespresso.db.services.user_context import GetUserContextService
 from nespresso.recsys.searching.preprocessing.embedding import CalculateTokenLen
 from nespresso.recsys.searching.preprocessing.model import TOKEN_LEN
 from nespresso.recsys.searching.search import SEARCHES, Page, ScrollingSearch
@@ -91,7 +93,10 @@ async def CommandFindText(message: types.Message, state: FSMContext) -> None:
         text=t(lang, "find.searching"),
     )
 
-    search = ScrollingSearch()
+    ctx = await GetUserContextService()
+    nes_id: int | None = await ctx.GetTgUser(message.chat.id, TgUser.nes_id)
+
+    search = ScrollingSearch(exclude_nes_id=nes_id)
     page = await search.HybridSearch(message)
 
     if page is None:

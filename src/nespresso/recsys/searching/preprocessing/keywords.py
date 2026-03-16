@@ -15,7 +15,7 @@ def ExtractKeywords(text: str) -> str:
         text,
         top_n=top_n,
         keyphrase_ngram_range=(1, 3),
-        stop_words="english",
+        stop_words=None,
         use_maxsum=True,
         nr_candidates=nr_candidates,
     )
