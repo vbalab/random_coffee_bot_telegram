@@ -58,12 +58,14 @@ src/nespresso/
 │   │   ├── nes_user.py
 │   │   ├── message.py
 │   │   ├── match.py         # MatchRepository
+│   │   ├── analytics.py     # AnalyticsRepository — aggregation queries for admin stats
 │   │   └── checking.py      # CheckColumnBelongsToModel(), CheckOnlyOneArgProvided()
 │   ├── services/            # Business logic over repos
 │   │   ├── user.py          # UserService (TgUser + NesUser)
 │   │   ├── message.py       # MessageService
 │   │   ├── matching.py      # MatchingService (match rounds + assignments + feedback)
-│   │   └── user_context.py  # UserContextService (unified facade)
+│   │   ├── user_context.py  # UserContextService (unified facade)
+│   │   └── analytics.py     # AnalyticsService + GetAnalyticsService()
 │   └── session.py           # Async engine, session factory, EnsureDB()
 ├── bot/                     # Telegram bot
 │   ├── lifecycle/
@@ -85,6 +87,7 @@ src/nespresso/
 │   │   │   │   ├── blocking.py  # Block/unblock users sub-panel
 │   │   │   │   ├── admins.py    # Admin list management sub-panel (notifies other admins on changes)
 │   │   │   │   ├── matching.py  # Run matching + send feedback request sub-panel
+│   │   │   │   ├── statistics.py # Statistics sub-panel + DB export
 │   │   │   │   ├── send.py      # (stub)
 │   │   │   │   ├── senda.py     # (stub)
 │   │   │   │   ├── messages.py  # (stub)
@@ -102,7 +105,7 @@ src/nespresso/
 │       │   ├── io.py        # SendMessage, SendDocument, SendMessagesToGroup, ReceiveMessage
 │       │   ├── i18n.py      # t(), GetUserLanguage(), SetUserLanguage()
 │       │   ├── checks.py    # CheckVerified()
-│       │   ├── file.py      # SendTemporaryFileFromText(), ToJSONText()
+│       │   ├── file.py      # SendTemporaryFileFromText(), ToJSONText(), SendTemporaryXlsxFile()
 │       │   ├── filters.py   # AdminFilter (checks admin_store)
 │       │   ├── keyboard.py  # CreateReplyKeyboard() generic builder
 │       │   └── middleware.py # MessageLoggingMiddleware, CallbackLoggingMiddleware
@@ -176,9 +179,9 @@ core/configs ←── everywhere (settings, paths, admin_store)
 
 ### Key Dependency Rules
 
-- **Handlers** never import repos directly — always go through `UserContextService`.
+- **Handlers** never import repos directly — always go through `UserContextService` or `AnalyticsService`.
 - **Repos** contain only SQL — no business logic, no Telegram calls.
-- **Services** wrap repos; `UserContextService` is the single entry point for handlers.
+- **Services** wrap repos; `UserContextService` is the single entry point for handlers; `AnalyticsService` is the dedicated entry point for analytics/export queries.
 - **`recsys/`** is self-contained; it imports from `db/` for user data but not from `bot/`.
 - **`bot/lib/message/io.py`** is the only place that calls Aiogram's bot methods for sending messages (except inline markups built in handlers).
 - **`core/`** has no imports from other nespresso modules — only stdlib + third-party.
@@ -331,9 +334,27 @@ Requires chat_id to be in `data/admins/admins.json` (checked via `admin_store.Co
 
 Accessed via Hub → "Admin panel" button (edits hub message in-place).
 
-Actions: Download logs | View user messages | Send DM | Broadcast | Block/Unblock | Run Matching / Send Feedback | Manage admins
+Actions: Download logs | View user messages | Send DM | Broadcast | Block/Unblock | Run Matching / Send Feedback | Manage admins | Statistics
 
 **Admin change notifications:** When an admin adds or removes another admin, all other admins receive a notification with who performed the action and who was affected.
+
+### 7. Statistics Panel (admin sub-panel)
+
+```
+Admin Panel → 📊 Statistics → edits hub message to show Statistics sub-panel
+
+Sub-panel buttons (each sends a new separate message with stats):
+  ├─ 👥 Users    → total, verified/unverified, blocked, language split,
+  │                profile completeness, new registrations (7d/30d)
+  ├─ 🎓 Alumni   → total NesUser profiles, top 5 countries/cities/
+  │                programs/industries/professional expertise
+  ├─ 💬 Activity → total messages, bot/user split, today/week counts,
+  │                top 5 most active users by message count
+  ├─ 🤝 Matching → eligible users (verified non-blocked), opted-out count,
+  │                total rounds run, last round date, last round assignments
+  └─ ⬇️ Download DB → sub-panel with one button per table; each sends a
+                       separate single-sheet .xlsx file (via openpyxl)
+```
 
 ---
 
@@ -373,6 +394,24 @@ await ctx.CreateAssignments(round_id, [(a, b), ...])   # → list[MatchAssignmen
 await ctx.GetAssignmentsByRound(round_id)              # → list[MatchAssignment]
 await ctx.GetRecentExcludedPairs(last_n_rounds=2)      # → set[tuple[int, int]]
 await ctx.UpsertFeedback(assignment_id, response)
+```
+
+### `AnalyticsService`
+
+Dedicated service for admin analytics and DB export — do **not** use `UserContextService` for these:
+
+```python
+svc = await GetAnalyticsService()
+
+# Aggregated stats (return dicts)
+await svc.GetTgUserStats()     # counts: total, verified, blocked, language, etc.
+await svc.GetNesUserStats()    # total + top-5 lists: countries, cities, programs, industries
+await svc.GetActivityStats()   # message counts + top-5 active users
+
+# Full table dumps (for xlsx export)
+await svc.GetAllTgUsers()      # list[TgUser]
+await svc.GetAllNesUsers()     # list[NesUser]
+await svc.GetAllMessages()     # list[Message]
 ```
 
 ### Repository Pattern
@@ -629,6 +668,8 @@ The handlers for these are in `hub.py` (HubBack) and `admin.py` (PanelBack).
 - Rate limiting for broadcasts uses `AsyncLimiter(30, 1)` — 30 messages per second — to stay within Telegram API limits.
 - `HUB_MESSAGES` is an in-memory cache; `TgUser.panel_message_id` is the persistent DB-backed counterpart used to restore hub state after bot restarts.
 - **Matching feedback analytics** (aggregating/displaying `MatchFeedback` responses) is not yet implemented — data is stored but no reporting UI exists.
+- **Statistics panel** sends stats as new separate messages (not hub edits) to avoid Telegram's 4096-char message length limit.
+- **DB export** (`⬇️ Download DB`) opens a sub-panel with one button per table; each writes a temporary single-sheet `.xlsx` to `data/temp/` via `openpyxl`, sends it, then deletes it. The `message` table can be large — export time scales with row count.
 
 ---
 
@@ -651,3 +692,5 @@ The handlers for these are in `hub.py` (HubBack) and `admin.py` (PanelBack).
 | `MatchFeedback` | User's response to a feedback request for a given assignment |
 | `panel_message_id` | DB-persisted hub message ID; enables hub deletion across bot restarts |
 | `HUB_MESSAGES` | In-memory `dict[chat_id → message_id]` for fast hub message tracking |
+| `AnalyticsService` | Dedicated service for admin stats queries and full-table DB exports |
+| `StatisticsAction` | Enum of statistics sub-panel actions (Users, Alumni, Activity, Matching, DownloadDB) |
