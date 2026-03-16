@@ -101,6 +101,7 @@
   "admin.admins_removed": "✅ @{username} удалён из администраторов.",
   "admin.admins_notify_added": "ℹ️ {actor} добавил {target} как администратора.",
   "admin.admins_notify_removed": "ℹ️ {actor} удалил {target} из администраторов.",
+  "admin.admins_cannot_remove_self": "❌ Вы не можете удалить собственные права администратора.",
 
   "admin.matching_header": "⚙️ Панель матчинга\n\nЗапустите новый раунд матчинга или запросите обратную связь по последнему раунду.",
   "admin.matching_button_run": "▶️ Запустить матчинг",

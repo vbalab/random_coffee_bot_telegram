@@ -101,6 +101,7 @@
   "admin.admins_removed": "✅ @{username} has been removed from admins.",
   "admin.admins_notify_added": "ℹ️ {actor} added {target} as admin.",
   "admin.admins_notify_removed": "ℹ️ {actor} removed {target} from admins.",
+  "admin.admins_cannot_remove_self": "❌ You cannot remove your own admin permissions.",
 
   "admin.matching_header": "⚙️ Matching Panel\n\nRun a new matching round or request feedback from the last round.",
   "admin.matching_button_run": "▶️ Run Matching Now",
