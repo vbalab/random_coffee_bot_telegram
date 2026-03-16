@@ -40,16 +40,23 @@ src/nespresso/
 │   │   ├── paths.py         # Filesystem paths + EnsurePaths()
 │   │   └── admin_store.py   # Persistent JSON admin list
 │   └── logs/                # Logging setup (color JSON, bot.log/api.log)
+│       ├── bot.py           # Bot logger setup
+│       ├── api.py           # API logger setup
+│       ├── flow.py          # LoggerStart() / LoggerShutdown()
+│       └── settings.py      # Log format/level config
 ├── db/                      # Database layer
+│   ├── base.py              # DeclarativeBase + IntoDict()
 │   ├── models/
-│   │   ├── base.py          # DeclarativeBase + IntoDict()
 │   │   ├── tg_user.py       # TgUser model (Telegram identity)
 │   │   ├── nes_user.py      # NesUser model (alumni profile)
-│   │   └── message.py       # Message model (audit log)
-│   ├── repos/               # Repository pattern (pure DB access)
-│   │   ├── nes_user.py
+│   │   ├── message.py       # Message model (audit log)
+│   │   └── schemas/
+│   │       └── nes_user.py  # Pydantic schema for NesUser API response
+│   ├── repositories/        # Repository pattern (pure DB access)
 │   │   ├── tg_user.py
-│   │   └── message.py
+│   │   ├── nes_user.py
+│   │   ├── message.py
+│   │   └── checking.py      # CheckColumnBelongsToModel(), CheckOnlyOneArgProvided()
 │   ├── services/            # Business logic over repos
 │   │   ├── user.py          # UserService (TgUser + NesUser)
 │   │   ├── message.py       # MessageService
@@ -57,48 +64,70 @@ src/nespresso/
 │   └── session.py           # Async engine, session factory, EnsureDB()
 ├── bot/                     # Telegram bot
 │   ├── lifecycle/
-│   │   ├── creator.py       # Bot + Dispatcher instances
-│   │   ├── menu.py          # Set bot commands
-│   │   └── register.py      # Attach all routers to dispatcher
+│   │   ├── creator.py       # Bot + Dispatcher + BOT_ID singletons
+│   │   └── menu.py          # SetMenu() — register /start, /cancel commands
 │   ├── handlers/
-│   │   ├── client/commands/
-│   │   │   ├── start.py     # Registration FSM (5 states)
-│   │   │   └── find.py      # Search FSM (2 states + pagination)
-│   │   ├── admin/           # Admin control panel handlers
-│   │   │   ├── admin.py     # Main panel + dispatcher
-│   │   │   ├── blocking.py  # Block/unblock users
-│   │   │   ├── admins.py    # Admin list management
-│   │   │   ├── matching.py  # Pause/resume scheduler
-│   │   │   ├── send.py      # DM a single user
-│   │   │   ├── senda.py     # Broadcast to all verified users
-│   │   │   ├── messages.py  # View user message history
-│   │   │   └── logs.py      # Download bot logs
-│   │   └── common/
-│   │       ├── cancel.py    # /cancel clears FSM state
-│   │       └── zero.py      # Fallback for unrecognized input
+│   │   ├── client/
+│   │   │   ├── commands/
+│   │   │   │   ├── hub.py   # Hub panel: SendHub(), HubKeyboard(), back-navigation
+│   │   │   │   ├── start.py # Registration FSM (5 states)
+│   │   │   │   └── find.py  # Search FSM (2 states + pagination)
+│   │   │   ├── email/
+│   │   │   │   └── verification.py  # CreateCode(), SendCode()
+│   │   │   └── register.py  # RegisterClientHandlers()
+│   │   ├── admin/
+│   │   │   ├── commands/
+│   │   │   │   ├── admin.py     # Main panel + all action handlers
+│   │   │   │   ├── back.py      # BackToAdminPanelCallbackData, BackToHubCallbackData
+│   │   │   │   ├── blocking.py  # Block/unblock users sub-panel
+│   │   │   │   ├── admins.py    # Admin list management sub-panel
+│   │   │   │   ├── matching.py  # Pause/resume scheduler sub-panel
+│   │   │   │   ├── send.py      # (stub)
+│   │   │   │   ├── senda.py     # (stub)
+│   │   │   │   ├── messages.py  # (stub)
+│   │   │   │   └── logs.py      # (stub)
+│   │   │   └── register.py      # RegisterAdminHandlers()
+│   │   ├── common/
+│   │   │   ├── commands/
+│   │   │   │   ├── cancel.py    # /cancel clears FSM state
+│   │   │   │   └── zero.py      # Fallback for unrecognized input
+│   │   │   └── register.py      # RegisterHandlerCancel(), RegisterHandlerZeroMessage()
+│   │   └── staff/               # (reserved, currently empty)
 │   └── lib/
+│       ├── hub_state.py     # HUB_MESSAGES: dict[chat_id → message_id] in-memory cache
 │       ├── message/
-│       │   ├── io.py        # SendMessage, SendDocument, broadcast, logging
-│       │   ├── i18n.py      # t(lang, key, **kwargs) translation lookup
+│       │   ├── io.py        # SendMessage, SendDocument, SendMessagesToGroup, ReceiveMessage
+│       │   ├── i18n.py      # t(), GetUserLanguage(), SetUserLanguage()
+│       │   ├── checks.py    # CheckVerified()
+│       │   ├── file.py      # SendTemporaryFileFromText(), ToJSONText()
+│       │   ├── filters.py   # AdminFilter (checks admin_store)
+│       │   ├── keyboard.py  # CreateReplyKeyboard() generic builder
 │       │   └── middleware.py # MessageLoggingMiddleware, CallbackLoggingMiddleware
-│       ├── chat/            # Telegram-side user helpers (username, block, etc.)
-│       └── checks.py        # CheckVerified(), AdminFilter
+│       ├── chat/
+│       │   ├── username.py  # GetTgUsername()
+│       │   └── block.py     # BlockUser(), UnblockUser()
+│       └── notifications/
+│           ├── admin.py     # NotifyOnStartup(), NotifyOnShutdown()
+│           ├── erroring.py  # SetExceptionHandlers(), AiogramExceptionHandler
+│           └── pending.py   # ProcessPendingUpdates()
 ├── recsys/                  # Recommendation system
+│   ├── profile.py           # Profile dataclass + DescribeProfile() + FromNesId()
 │   ├── searching/
-│   │   ├── model.py         # Load Alibaba GTE model (singleton)
-│   │   ├── embedding.py     # CreateEmbedding(), CalculateTokenLen()
-│   │   ├── keywords.py      # ExtractKeywords() via KeyBERT
-│   │   ├── client.py        # AsyncOpenSearch client
+│   │   ├── preprocessing/
+│   │   │   ├── model.py     # Load Alibaba GTE model (singleton)
+│   │   │   ├── embedding.py # CreateEmbedding(), CalculateTokenLen()
+│   │   │   └── keywords.py  # ExtractKeywords() via KeyBERT
+│   │   ├── client.py        # AsyncOpenSearch client + CloseOpenSearchClient()
 │   │   ├── index.py         # Index schema + EnsureOpenSearchIndex()
 │   │   ├── document.py      # UpsertTextOpenSearch(), DeleteUserOpenSearch()
 │   │   └── search.py        # ScrollingSearch class + TTLCache
 │   └── matching/
-│       ├── profile.py       # Profile dataclass + DescribeProfile()
 │       ├── assign.py        # MatchUsers() derangement + SendMatchingInfo()
-│       ├── schedule.py      # APScheduler weekly job
+│       ├── schedule.py      # APScheduler job: StartMatching(), ShutdownMatching(), PauseMatching(), ResumeMatching()
 │       └── emoji.py         # RandomEmoji() for match identity
 ├── api/
 │   ├── app.py               # FastAPI app + lifespan
+│   ├── request.py           # HTTP request helpers
 │   └── routers/
 │       └── nes_user.py      # (stub — TODOs only)
 └── translations/
@@ -121,9 +150,9 @@ bot/lib  ←──────────────────────�
      ▼                                       │
 db/services/user_context  (unified facade)  │
      │                                       │
-     ├── db/services/user    ←── db/repos/tg_user
-     │                       ←── db/repos/nes_user
-     └── db/services/message ←── db/repos/message
+     ├── db/services/user    ←── db/repositories/tg_user
+     │                       ←── db/repositories/nes_user
+     └── db/services/message ←── db/repositories/message
                                       │
                                       ▼
                                db/session  (AsyncSession)
@@ -133,6 +162,8 @@ db/services/user_context  (unified facade)  │
 
 recsys/searching ←── recsys/matching
                  ←── bot/handlers/client/commands/find.py
+
+recsys/profile   ←── recsys/matching/assign.py
 
 core/configs ←── everywhere (settings, paths, admin_store)
 ```
@@ -145,6 +176,7 @@ core/configs ←── everywhere (settings, paths, admin_store)
 - **`recsys/`** is self-contained; it imports from `db/` for user data but not from `bot/`.
 - **`bot/lib/message/io.py`** is the only place that calls Aiogram's bot methods for sending messages (except inline markups built in handlers).
 - **`core/`** has no imports from other nespresso modules — only stdlib + third-party.
+- **Admin handlers** all live under `bot/handlers/admin/commands/`; the stub files (send.py, senda.py, messages.py, logs.py) exist but real logic is in `admin.py`.
 
 ---
 
@@ -160,6 +192,7 @@ core/configs ←── everywhere (settings, paths, admin_store)
 | `phone_number` | String | indexed |
 | `language` | String | "en" or "ru" |
 | `about` | String | Free-form bio |
+| `panel_message_id` | BigInteger | Last active hub message ID (for single-instance hub) |
 | `verified` | Boolean | Registration complete |
 | `blocked` | Boolean | Admin-blocked |
 
@@ -190,19 +223,38 @@ Stores every bot↔user message exchange with timestamp and side (`Bot`/`User` e
 
 ```
 /start
-  └─ state: ChooseLanguage  → inline buttons EN/RU → SetUserLanguage()
+  └─ if no language set → state: ChooseLanguage → reply keyboard EN/RU → SetUserLanguage()
+  └─ if already verified → SendHub(chat_id) immediately
   └─ state: GetPhoneNumber  → request contact share → store phone
-  └─ state: EmailGet        → free-text email input
+  └─ state: EmailGet        → free-text email input (must contain @nes.ru)
   └─ state: EmailConfirm    → CreateCode() → SendCode(email, code) via SMTP
                               user enters 6-digit code → validate
   └─ state: Terms           → send terms.pdf → user accepts
-  └─ verified = True, FSM cleared
+  └─ verified = True, FSM cleared → SendHub(chat_id)
 ```
 
-### 2. Alumni Search (`/find`)
+### 2. Hub Panel (`/start` for verified users)
 
 ```
-/find
+SendHub(chat_id)
+  └─ Read panel_message_id from HUB_MESSAGES[chat_id] (in-memory)
+     or fall back to TgUser.panel_message_id in DB (survives restarts)
+  └─ Delete old hub message (if any)
+  └─ Send new hub message with HubKeyboard (Find + Admin buttons)
+  └─ Store new message_id in both HUB_MESSAGES[chat_id] and TgUser.panel_message_id
+
+Hub navigation (in-place editing of single message):
+  ├─ "Find person" → enters Find FSM
+  ├─ "Admin panel" → edits hub message to show AdminPanel
+  │     └─ sub-panels (Blocking, Admins, Matching) edit same message
+  │     └─ "Back" → edits back to AdminPanel
+  └─ "Back to hub" → edits back to HubKeyboard
+```
+
+### 3. Alumni Search (`/find` or hub button)
+
+```
+Find
   └─ state: Text   → user enters query text
                      CreateEmbedding(text) → 768-dim vector
                      HybridQuery(BM25 + KNN on mynes+cv fields)
@@ -212,7 +264,7 @@ Stores every bot↔user message exchange with timestamp and side (`Bot`/`User` e
                       display NesUser profile for each result
 ```
 
-### 3. Biweekly Matching (scheduled)
+### 4. Biweekly Matching (scheduled)
 
 ```
 APScheduler: every odd week, Monday 12:00 MSK
@@ -225,9 +277,11 @@ APScheduler: every odd week, Monday 12:00 MSK
        Rate-limited: AsyncLimiter(30/sec)
 ```
 
-### 4. Admin Panel (`/admin`)
+### 5. Admin Panel (hub button, admin users only)
 
-Requires `AdminFilter` (chat_id in `data/admins/admins.json`).
+Requires chat_id to be in `data/admins/admins.json` (checked via `admin_store.Contains()`).
+
+Accessed via Hub → "Admin panel" button (edits hub message in-place).
 
 Actions: Send DM | Broadcast | View messages | Block/Unblock | Manage admins | Control matching schedule | Download logs
 
@@ -244,14 +298,17 @@ The **central facade** used by all handlers:
 ctx = await GetUserContextService()
 
 # TgUser operations
-await ctx.CreateTgUser(chat_id)
-await ctx.GetTgUser(chat_id)
-await ctx.UpdateTgUser(chat_id, column, value)
-await ctx.GetChatIdBy(nes_email="foo@nes.ru")
+await ctx.RegisterTgUser(chat_id)           # create new TgUser
+await ctx.GetTgUser(chat_id)                # full TgUser object
+await ctx.GetTgUser(chat_id, TgUser.field)  # single column value
+await ctx.UpdateTgUser(chat_id, TgUser.column, value)
+await ctx.GetTgChatIdBy(tg_username="foo")  # lookup by various fields
+await ctx.CheckTgUserExists(chat_id)        # bool
+await ctx.GetVerifiedTgUsersChatId()        # list[int]
 
 # NesUser operations
 await ctx.GetNesUser(nes_id)
-await ctx.UpsertNesUsers([...])
+await ctx.UpsertNesUser([...])
 
 # Message logging
 await ctx.RegisterIncomingMessage(message)
@@ -261,14 +318,15 @@ await ctx.GetRecentMessages(chat_id, limit=20)
 
 ### Repository Pattern
 
-Each repo receives an `AsyncSession` and exposes typed async methods. All SQL lives here — no raw queries in services or handlers.
+Each repo receives an `async_sessionmaker[AsyncSession]` and exposes typed async methods. All SQL lives here.
 
 ```
-Repository methods:
-  - GetXxx()        → raises NoResultFound if missing
-  - GetXxxOrNone()  → returns None if missing
-  - UpsertXxx()     → INSERT ... ON CONFLICT DO UPDATE
-  - UpdateXxx()     → targeted column update
+TgUserRepository methods:
+  - CreateTgUser(chat_id)
+  - GetTgUser(chat_id, column=None)       → TgUser | T | None
+  - GetTgUsersOnCondition(condition, column=None)
+  - GetChatIdBy(tg_username=...|nes_id=...|nes_email=...)
+  - UpdateTgUser(chat_id, column, value)
 ```
 
 ---
@@ -303,12 +361,12 @@ Results are ranked by combined BM25 + cosine similarity score.
 
 ### `ScrollingSearch` (search.py)
 
-Stateful pagination class keyed by `chat_id`. Cached in `SEARCHES: TTLCache` (5000 entries, 60-min TTL).
+Stateful pagination class. Cached in `SEARCHES: TTLCache` (5000 entries, 60-min TTL).
 
 ```python
 search = ScrollingSearch(query, embedding)
-page: Page = await search.NextPage()   # forward
-page: Page = await search.PrevPage()   # backward
+page = await search.ScrollForward()   # next page
+page = await search.ScrollBackward()  # previous page
 ```
 
 ---
@@ -318,7 +376,7 @@ page: Page = await search.PrevPage()   # backward
 All user-facing strings live in `translations/en.json` and `translations/ru.json`.
 
 ```python
-from bot.lib.message.i18n import t
+from nespresso.bot.lib.message.i18n import t
 
 text = t(lang, "key.path", name="Alice")
 ```
@@ -364,7 +422,7 @@ data/
 
 Persistent list of admin chat IDs stored in `data/admins/admins.json`. Default admin: `749410326`.
 
-Used by `AdminFilter` (Aiogram message filter) to gate all `/admin` handlers.
+Used by `admin_store.Contains(chat_id)` to gate admin panel access and `AdminFilter` middleware.
 
 ---
 
@@ -384,14 +442,30 @@ All services share `nespresso_network` bridge.
 ## Startup Sequence (`__main__.py`)
 
 ```python
+main():
 1. EnsurePaths()              # Create required dirs/files
-2. EnsureDB()                 # Create PG tables if missing
-3. EnsureOpenSearchIndex()    # Create OS index if missing
-4. SetBotMiddleware(dp)       # Register logging middleware
-5. RegisterHandlers(dp)       # Attach all routers
-6. SetBotMenu(bot)            # Register /start, /find, /cancel, /help
-7. StartMatching()            # Start APScheduler
-8. dp.start_polling(bot)      # Begin Aiogram polling loop
+2. LoggerStart(LoggerSetup)   # Configure structured logging
+3. EnsureDB()                 # Create PG tables if missing
+4. EnsureOpenSearchIndex()    # Create OS index if missing
+5. SetExceptionHandlers()     # Asyncio + Aiogram error handlers
+6. dp.start_polling(bot, drop_pending_updates=True)
+
+OnStartup() [registered as dp.startup hook]:
+1. SetMenu()                  # Register /start, /cancel bot commands
+2. RegisterHandlerCancel(dp)  # /cancel handler
+3. RegisterAdminHandlers(dp)  # Admin panel routers
+4. RegisterClientHandlers(dp) # Hub, start, find routers
+5. RegisterHandlerZeroMessage(dp)  # Fallback handler
+6. SetBotMiddleware(dp)       # Logging middleware
+7. NotifyOnStartup()          # Send "Bot started" to all admins
+8. ProcessPendingUpdates()    # Handle messages received while offline
+9. StartMatching()            # Start APScheduler
+
+OnShutdown() [registered as dp.shutdown hook]:
+1. NotifyOnShutdown()         # Send bot.log to all admins
+2. CloseOpenSearchClient()    # Graceful OpenSearch disconnect
+3. ShutdownMatching()         # Stop APScheduler
+4. LoggerShutdown()           # Flush logs
 ```
 
 ---
@@ -411,7 +485,7 @@ class SomeStates(StatesGroup):
 async def handle_cmd(message: Message, state: FSMContext):
     ctx = await GetUserContextService()
     lang = await GetUserLanguage(message.chat.id)
-    await SendMessage(bot, message.chat.id, t(lang, "some.key"))
+    await SendMessage(chat_id=message.chat.id, text=t(lang, "some.key"))
     await state.set_state(SomeStates.First)
 ```
 
@@ -420,10 +494,10 @@ async def handle_cmd(message: Message, state: FSMContext):
 Always use `bot/lib/message/io.py` — never call `bot.send_message()` directly:
 
 ```python
-from bot.lib.message.io import SendMessage, SendDocument
+from nespresso.bot.lib.message.io import SendMessage, SendDocument
 
-await SendMessage(bot, chat_id, text, reply_markup=kb)
-await SendDocument(bot, chat_id, file, caption=text)
+await SendMessage(chat_id=chat_id, text=text, reply_markup=kb)
+await SendDocument(chat_id=chat_id, document=file, caption=text)
 ```
 
 ### Callback Buttons
@@ -440,6 +514,25 @@ async def handle(query: CallbackQuery, callback_data: MyCallback):
     ...
 ```
 
+### Hub Navigation (back buttons)
+
+Use the shared `BackToHubCallbackData` and `BackToAdminPanelCallbackData` from `back.py`:
+
+```python
+from nespresso.bot.handlers.admin.commands.back import (
+    BackToAdminPanelCallbackData,
+    BackToHubCallbackData,
+)
+
+# Add to keyboard
+InlineKeyboardButton(
+    text="← Back",
+    callback_data=BackToHubCallbackData().pack(),
+)
+```
+
+The handlers for these are in `hub.py` (HubBack) and `admin.py` (PanelBack).
+
 ---
 
 ## Development Notes
@@ -450,6 +543,7 @@ async def handle(query: CallbackQuery, callback_data: MyCallback):
 - The ML model (Alibaba GTE) is downloaded on first run to `data/recsys/embedding/model/` — ensure write permissions and network access.
 - OpenSearch requires the `OPENSEARCH_INITIAL_ADMIN_PASSWORD` env var; TLS is disabled in dev config.
 - Rate limiting for broadcasts uses `AsyncLimiter(30, 1)` — 30 messages per second — to stay within Telegram API limits.
+- `HUB_MESSAGES` is an in-memory cache; `TgUser.panel_message_id` is the persistent DB-backed counterpart used to restore hub state after bot restarts.
 
 ---
 
@@ -466,3 +560,5 @@ async def handle(query: CallbackQuery, callback_data: MyCallback):
 | `UserContextService` | Unified service facade used by handlers |
 | `AdminStore` | JSON-backed persistent list of admin chat IDs |
 | `derangement` | Permutation where no element maps to itself (matching algo) |
+| `panel_message_id` | DB-persisted hub message ID; enables hub deletion across bot restarts |
+| `HUB_MESSAGES` | In-memory `dict[chat_id → message_id]` for fast hub message tracking |
