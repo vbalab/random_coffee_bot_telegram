@@ -111,7 +111,9 @@ async def CommandStartChooseLanguage(message: types.Message, state: FSMContext) 
     if await CheckVerified(chat_id=chat_id):
         from nespresso.bot.handlers.client.commands.hub import SendHub
 
-        await SendMessage(chat_id=chat_id, reply_markup=ReplyKeyboardRemove(), text="\u200b")
+        await SendMessage(
+            chat_id=chat_id, reply_markup=ReplyKeyboardRemove(), text="\u200b"
+        )
         await state.clear()
         await SendHub(chat_id)
         return

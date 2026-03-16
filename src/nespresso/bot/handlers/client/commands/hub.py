@@ -64,7 +64,10 @@ async def SendHub(chat_id: int) -> None:
         try:
             await bot.delete_message(chat_id=chat_id, message_id=old_id)
         except Exception:
-            logging.warning(f"Failed to delete old hub message for chat_id={chat_id} message_id={old_id}", exc_info=True)
+            logging.warning(
+                f"Failed to delete old hub message for chat_id={chat_id} message_id={old_id}",
+                exc_info=True,
+            )
 
     msg = await SendMessage(
         chat_id=chat_id,
@@ -74,7 +77,9 @@ async def SendHub(chat_id: int) -> None:
     if msg is not None:
         HUB_MESSAGES[chat_id] = msg.message_id
         ctx = await GetUserContextService()
-        await ctx.UpdateTgUser(chat_id=chat_id, column=TgUser.panel_message_id, value=msg.message_id)
+        await ctx.UpdateTgUser(
+            chat_id=chat_id, column=TgUser.panel_message_id, value=msg.message_id
+        )
 
 
 @router.callback_query(HubCallbackData.filter(F.action == HubAction.Find))

@@ -76,7 +76,9 @@ async def _GetBlockedUserDisplayName(chat_id: int) -> str:
         if username:
             return f"@{username}"
     except Exception:
-        logging.warning(f"Failed to get username from DB for chat_id={chat_id}", exc_info=True)
+        logging.warning(
+            f"Failed to get username from DB for chat_id={chat_id}", exc_info=True
+        )
 
     return str(chat_id)
 

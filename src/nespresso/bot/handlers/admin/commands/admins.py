@@ -74,7 +74,9 @@ async def _GetAdminDisplayName(chat_id: int) -> str:
                     value=chat.username,
                 )
             except Exception:
-                logging.warning(f"Failed to update username for chat_id={chat_id}", exc_info=True)
+                logging.warning(
+                    f"Failed to update username for chat_id={chat_id}", exc_info=True
+                )
             return f"@{chat.username}"
     except Exception:
         logging.warning(f"Failed to get chat info for chat_id={chat_id}", exc_info=True)
@@ -85,7 +87,9 @@ async def _GetAdminDisplayName(chat_id: int) -> str:
         if username:
             return f"@{username}"
     except Exception:
-        logging.warning(f"Failed to get username from DB for chat_id={chat_id}", exc_info=True)
+        logging.warning(
+            f"Failed to get username from DB for chat_id={chat_id}", exc_info=True
+        )
 
     return str(chat_id)
 
