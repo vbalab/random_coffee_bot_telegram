@@ -1,49 +1,33 @@
-import json
-
-from nespresso.core.configs.paths import PATH_ADMINS, EnsurePaths
-
-DEFAULT_ADMIN_CHAT_IDS = [749410326]
+from nespresso.db.models.tg_user import TgUser
+from nespresso.db.services.user_context import GetUserContextService
 
 
-class AdminStore:
-    """
-    Persistent store for admin chat IDs backed by ./data/admins/admins.json.
-    """
-
-    def __init__(self) -> None:
-        self._ids: list[int] = []
-        self._load()
-
-    def _load(self) -> None:
-        with open(PATH_ADMINS) as f:
-            self._ids = [int(x) for x in json.load(f)]
-
-    def _save(self) -> None:
-        with open(PATH_ADMINS, "w") as f:
-            json.dump(self._ids, f, indent=2)
-
-    def GetIds(self) -> list[int]:
-        return list(self._ids)
-
-    def Contains(self, chat_id: int) -> bool:
-        return chat_id in self._ids
-
-    def Add(self, chat_id: int) -> bool:
-        """Returns False if already an admin."""
-        if chat_id in self._ids:
-            return False
-        self._ids.append(chat_id)
-        self._save()
-        return True
-
-    def Remove(self, chat_id: int) -> bool:
-        """Returns False if not an admin."""
-        if chat_id not in self._ids:
-            return False
-        self._ids.remove(chat_id)
-        self._save()
-        return True
+async def GetAdminIds() -> list[int]:
+    ctx = await GetUserContextService()
+    return await ctx.GetAdminChatIds()
 
 
-EnsurePaths()
-admin_store = AdminStore()
+async def IsAdmin(chat_id: int) -> bool:
+    ctx = await GetUserContextService()
+    result = await ctx.GetTgUser(chat_id, TgUser.is_admin)
+    return bool(result)
+
+
+async def AddAdmin(chat_id: int) -> bool:
+    """Returns False if already an admin."""
+    ctx = await GetUserContextService()
+    current = await ctx.GetTgUser(chat_id, TgUser.is_admin)
+    if current:
+        return False
+    await ctx.UpdateTgUser(chat_id, TgUser.is_admin, True)
+    return True
+
+
+async def RemoveAdmin(chat_id: int) -> bool:
+    """Returns False if not an admin."""
+    ctx = await GetUserContextService()
+    current = await ctx.GetTgUser(chat_id, TgUser.is_admin)
+    if not current:
+        return False
+    await ctx.UpdateTgUser(chat_id, TgUser.is_admin, False)
+    return True
