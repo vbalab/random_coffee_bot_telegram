@@ -250,6 +250,16 @@ async def AdminsPanelRemoveUsername(message: types.Message, state: FSMContext) -
         )
         return
 
+    if chat_id == message.chat.id:
+        await SendMessage(
+            chat_id=message.chat.id,
+            text=t(lang, "admin.admins_cannot_remove_self"),
+            context=ContextIO.UserFailed,
+        )
+        await state.clear()
+        await ShowAdminsPanel(message.chat.id)
+        return
+
     removed = await RemoveAdmin(chat_id)
     await state.clear()
 
