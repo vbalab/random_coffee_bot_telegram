@@ -1,6 +1,6 @@
 from aiogram import Dispatcher
 
-from nespresso.bot.handlers.client.commands import find, hub, start
+from nespresso.bot.handlers.client.commands import about, find, hub, start
 
 
 def RegisterClientHandlers(dp: Dispatcher) -> None:
@@ -8,4 +8,5 @@ def RegisterClientHandlers(dp: Dispatcher) -> None:
         hub.router,
         start.router,
         find.router,
+        about.router,
     )

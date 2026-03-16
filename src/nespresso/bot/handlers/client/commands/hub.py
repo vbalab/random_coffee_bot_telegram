@@ -24,6 +24,7 @@ class HubAction(str, Enum):
     Find = "find"
     Admin = "admin"
     ToggleMatching = "toggle_matching"
+    About = "about"
 
 
 class HubCallbackData(CallbackData, prefix="hub"):
@@ -41,6 +42,12 @@ def HubKeyboard(
             InlineKeyboardButton(
                 text=t(lang, "hub.find_person"),
                 callback_data=HubCallbackData(action=HubAction.Find).pack(),
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text=t(lang, "hub.my_about"),
+                callback_data=HubCallbackData(action=HubAction.About).pack(),
             )
         ],
         [
@@ -146,6 +153,25 @@ async def HubToggleMatching(callback_query: types.CallbackQuery) -> None:
         await callback_query.message.edit_reply_markup(
             reply_markup=HubKeyboard(chat_id, lang, matching_paused=new_value)
         )
+    except TelegramBadRequest:
+        pass
+
+
+@router.callback_query(HubCallbackData.filter(F.action == HubAction.About))
+async def HubAboutCallback(callback_query: types.CallbackQuery) -> None:
+    assert isinstance(callback_query.message, types.Message)
+    await callback_query.answer()
+
+    chat_id = callback_query.from_user.id
+    lang = await GetUserLanguage(chat_id)
+    ctx = await GetUserContextService()
+    about = await ctx.GetTgUser(chat_id, TgUser.about)
+
+    from nespresso.bot.handlers.client.commands.about import BuildAboutPanelContent
+
+    text, keyboard = BuildAboutPanelContent(lang, about)
+    try:
+        await callback_query.message.edit_text(text=text, reply_markup=keyboard)
     except TelegramBadRequest:
         pass
 
