@@ -37,7 +37,7 @@
   "find.search_expired": "Поиск устарел",
   "find.no_more_pages": "Больше страниц нет",
 
-  "admin.panel_header": "⚙️ Панель администратора\n\n• 📋 Логи — скачать логи бота\n• 💬 Сообщения — просмотр сообщений пользователя\n• 📤 Отправить — отправить сообщение пользователю\n• 📢 Всем — рассылка всем верифицированным пользователям\n• 🚫 Блокировка — заблокировать или разблокировать\n• ⚙️ Матчинг — запуск матчинга или запрос обратной связи\n• 👥 Администраторы — управление списком администраторов",
+  "admin.panel_header": "⚙️ Панель администратора\n\n• 📋 Логи — скачать логи бота\n• 💬 Сообщения — просмотр сообщений пользователя\n• 📤 Отправить — отправить сообщение пользователю\n• 📢 Всем — рассылка всем верифицированным пользователям\n• 🚫 Блокировка — заблокировать или разблокировать\n• ⚙️ Матчинг — запуск матчинга или запрос обратной связи\n• 👥 Администраторы — управление списком администраторов\n• 📊 Статистика — аналитика платформы",
   "admin.button_logs": "📋 Логи",
   "admin.button_messages": "💬 Сообщения",
   "admin.button_send": "📤 Отправить",
@@ -45,6 +45,7 @@
   "admin.button_blocking": "🚫 Блокировка",
   "admin.button_matching": "⚙️ Матчинг",
   "admin.button_admins": "👥 Администраторы",
+  "admin.button_statistics": "📊 Статистика",
   "admin.button_back": "⬅️ Назад",
   "admin.button_back_hub": "🏠 Главная",
 
@@ -103,6 +104,24 @@
   "matching.feedback_planning": "📅 Планирую",
   "matching.feedback_thanks": "Спасибо за ответ!",
 
+  "admin.stats_header": "📊 Статистика\n\nВыберите категорию:",
+  "admin.stats_button_users": "👥 Пользователи",
+  "admin.stats_button_alumni": "🎓 Выпускники",
+  "admin.stats_button_activity": "💬 Активность",
+  "admin.stats_button_matching": "🤝 Матчинг",
+  "admin.stats_button_download_db": "⬇️ Скачать БД",
+  "admin.stats_db_header": "⬇️ Скачать БД\n\nВыберите таблицу для скачивания:",
+  "admin.stats_db_button_tg_user": "👤 tg_user",
+  "admin.stats_db_button_nes_user": "🎓 nes_user",
+  "admin.stats_db_button_message": "💬 message",
+
+  "admin.stats_users": "📊 Статистика пользователей\n\n👥 Всего пользователей: {total}\n✅ Верифицированы: {verified} ({verified_pct})\n⏳ Не верифицированы: {unverified} ({unverified_pct})\n🚫 Заблокированы: {blocked} ({blocked_pct})\n\n🌐 Язык (среди верифицированных):\n  • EN: {lang_en} ({lang_en_pct})\n  • RU: {lang_ru} ({lang_ru_pct})\n\n📝 Заполненность профиля:\n  • С @username: {with_username} ({with_username_pct})\n  • С биографией: {with_about} ({with_about_pct})\n\n📅 Новые регистрации:\n  • За 7 дней: {new_week}\n  • За 30 дней: {new_month}",
+  "admin.stats_alumni": "🎓 Профили выпускников\n\n📚 Всего профилей: {total}\n\n🌍 Топ стран:\n{top_countries}\n\n🏙 Топ городов:\n{top_cities}\n\n🎓 Топ программ:\n{top_programs}\n\n💼 Топ отраслей:\n{top_industries}\n\n🛠 Топ профессиональных компетенций:\n{top_professional}",
+  "admin.stats_activity": "💬 Статистика активности\n\n📨 Всего сообщений: {total}\n  • Бот: {bot} ({bot_pct})\n  • Пользователи: {user} ({user_pct})\n\n📅 Последняя активность:\n  • Сегодня: {today}\n  • За 7 дней: {week}\n\n🏆 Самые активные пользователи:\n{top_users}",
+  "admin.stats_matching": "🤝 Статистика матчинга\n\n✅ Подходят для матчинга: {eligible}\n👥 Всего верифицированных: {verified}\n🔕 Отказались: {opted_out}\n\n🔢 Всего раундов: {total_rounds}\n📅 Последний раунд: {last_round_date}\n📊 Назначений в последнем раунде: {last_round_assignments}",
+
+  "common.yes": "Да",
+  "common.no": "Нет",
   "common.canceled": "Отменено",
   "zero.not_in_command": "Сейчас вы не в команде.\nИспользуйте /start для открытия меню",
   "zero.not_text_idle": "Бот работает только с текстовыми сообщениями.\nИспользуйте /start для открытия меню",

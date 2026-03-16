@@ -37,7 +37,7 @@
   "find.search_expired": "Search is expired",
   "find.no_more_pages": "No more pages",
 
-  "admin.panel_header": "⚙️ Admin Panel\n\n• 📋 Logs — download bot logs\n• 💬 Messages — view messages of a user\n• 📤 Send — send a message to a user\n• 📢 Send All — broadcast to all verified users\n• 🚫 Blocking — block or unblock a user\n• ⚙️ Matching — run matching or request feedback\n• 👥 Admins — manage admin list",
+  "admin.panel_header": "⚙️ Admin Panel\n\n• 📋 Logs — download bot logs\n• 💬 Messages — view messages of a user\n• 📤 Send — send a message to a user\n• 📢 Send All — broadcast to all verified users\n• 🚫 Blocking — block or unblock a user\n• ⚙️ Matching — run matching or request feedback\n• 👥 Admins — manage admin list\n• 📊 Statistics — view platform analytics",
   "admin.button_logs": "📋 Logs",
   "admin.button_messages": "💬 Messages",
   "admin.button_send": "📤 Send",
@@ -45,6 +45,7 @@
   "admin.button_blocking": "🚫 Blocking",
   "admin.button_matching": "⚙️ Matching",
   "admin.button_admins": "👥 Admins",
+  "admin.button_statistics": "📊 Statistics",
   "admin.button_back": "⬅️ Back",
   "admin.button_back_hub": "🏠 Hub",
 
@@ -103,6 +104,24 @@
   "matching.feedback_planning": "📅 Planning to",
   "matching.feedback_thanks": "Thanks for the feedback!",
 
+  "admin.stats_header": "📊 Statistics\n\nChoose a category to view:",
+  "admin.stats_button_users": "👥 Users",
+  "admin.stats_button_alumni": "🎓 Alumni",
+  "admin.stats_button_activity": "💬 Activity",
+  "admin.stats_button_matching": "🤝 Matching",
+  "admin.stats_button_download_db": "⬇️ Download DB",
+  "admin.stats_db_header": "⬇️ Download DB\n\nChoose a table to download:",
+  "admin.stats_db_button_tg_user": "👤 tg_user",
+  "admin.stats_db_button_nes_user": "🎓 nes_user",
+  "admin.stats_db_button_message": "💬 message",
+
+  "admin.stats_users": "📊 User Statistics\n\n👥 Total users: {total}\n✅ Verified: {verified} ({verified_pct})\n⏳ Unverified: {unverified} ({unverified_pct})\n🚫 Blocked: {blocked} ({blocked_pct})\n\n🌐 Language (among verified):\n  • EN: {lang_en} ({lang_en_pct})\n  • RU: {lang_ru} ({lang_ru_pct})\n\n📝 Profile completeness:\n  • With @username: {with_username} ({with_username_pct})\n  • With bio: {with_about} ({with_about_pct})\n\n📅 New registrations:\n  • Last 7 days: {new_week}\n  • Last 30 days: {new_month}",
+  "admin.stats_alumni": "🎓 Alumni Profile Statistics\n\n📚 Total profiles: {total}\n\n🌍 Top countries:\n{top_countries}\n\n🏙 Top cities:\n{top_cities}\n\n🎓 Top programs:\n{top_programs}\n\n💼 Top industries:\n{top_industries}\n\n🛠 Top professional expertise:\n{top_professional}",
+  "admin.stats_activity": "💬 Activity Statistics\n\n📨 Total messages: {total}\n  • Bot: {bot} ({bot_pct})\n  • User: {user} ({user_pct})\n\n📅 Recent activity:\n  • Today: {today}\n  • Last 7 days: {week}\n\n🏆 Most active users (messages sent):\n{top_users}",
+  "admin.stats_matching": "🤝 Matching Statistics\n\n✅ Eligible for matching: {eligible}\n👥 Total verified: {verified}\n🔕 Opted out: {opted_out}\n\n🔢 Total rounds run: {total_rounds}\n📅 Last round: {last_round_date}\n📊 Assignments in last round: {last_round_assignments}",
+
+  "common.yes": "Yes",
+  "common.no": "No",
   "common.canceled": "Canceled",
   "zero.not_in_command": "You're not in a command right now.\nUse /start to open the menu",
   "zero.not_text_idle": "The bot only works with text messages.\nUse /start to open the menu",
