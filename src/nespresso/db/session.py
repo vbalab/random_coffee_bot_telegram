@@ -31,3 +31,8 @@ async def EnsureDB() -> None:
                 "ALTER TABLE tg_user ADD COLUMN IF NOT EXISTS matching_paused BOOLEAN NOT NULL DEFAULT FALSE"
             )
         )
+        await conn.execute(
+            text(
+                "ALTER TABLE tg_user ADD COLUMN IF NOT EXISTS panel_message_id BIGINT"
+            )
+        )
