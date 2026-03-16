@@ -9,12 +9,12 @@ from nespresso.db.services.user_context import GetUserContextService
 @dataclass
 class Profile:
     nes_id: int
-    username: str
-    phone_number: str
-    email: str
-    about: str
-    nes_self: str
-    nes_work: str
+    username: str | None
+    phone_number: str | None
+    email: str | None
+    about: str | None
+    nes_self: str | None
+    nes_work: str | None
 
     @classmethod
     async def FromNesId(cls, nes_id: int) -> Profile:

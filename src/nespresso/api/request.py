@@ -30,12 +30,12 @@ async def _FetchNesUserData(nes_id: int) -> dict[str, Any]:
             "Failed to fetch NES user data.",
             extra={"nes_id": nes_id, "status_code": response.status_code},
         )
-        # raise TODO
+        raise
 
     return response.json()
 
 
-async def GetNesUserFromMyNES(nes_id: int) -> NesUserIn:
+async def GetNesUserFromMyNES(nes_id: int) -> NesUserIn | None:
     data = await _FetchNesUserData(nes_id)
 
     try:
@@ -45,8 +45,7 @@ async def GetNesUserFromMyNES(nes_id: int) -> NesUserIn:
             "Failed to parse NES user data.",
             extra={"nes_id": nes_id, "payload": data},
         )
-        return
-        # raise TODO
+        return None
 
     alchemy_nes_user = _NesUserPydanticToSQLAlchemy(nes_user)
 
