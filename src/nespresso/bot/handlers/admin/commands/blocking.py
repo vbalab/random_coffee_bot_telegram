@@ -158,7 +158,6 @@ async def BlockingPanelBlockUsername(message: types.Message, state: FSMContext) 
             text=t(lang, "admin.blocking_not_found", username=username),
             context=ContextIO.UserFailed,
         )
-        await state.clear()
         return
 
     blocked = await CheckIfBlocked(chat_id)
@@ -218,7 +217,6 @@ async def BlockingPanelUnblockUsername(
             text=t(lang, "admin.blocking_not_found", username=username),
             context=ContextIO.UserFailed,
         )
-        await state.clear()
         return
 
     blocked = await CheckIfBlocked(chat_id)
