@@ -75,7 +75,8 @@ src/nespresso/
 │   │   ├── client/
 │   │   │   ├── commands/
 │   │   │   │   ├── hub.py   # Hub panel: SendHub(), HubKeyboard(), matching toggle
-│   │   │   │   ├── start.py # Registration FSM (5 states)
+│   │   │   │   ├── start.py # Registration FSM (6 states, incl. AboutNow)
+│   │   │   │   ├── about.py # About panel: view/edit user bio (hub sub-panel + FSM)
 │   │   │   │   └── find.py  # Search FSM (2 states + pagination)
 │   │   │   ├── email/
 │   │   │   │   └── verification.py  # CreateCode(), SendCode()
@@ -264,7 +265,10 @@ Stores every bot↔user message exchange with timestamp and side (`Bot`/`User` e
   └─ state: EmailConfirm    → CreateCode() → SendCode(email, code) via SMTP
                               user enters 6-digit code → validate
   └─ state: Terms           → send terms.pdf → user accepts
-  └─ verified = True, FSM cleared → SendHub(chat_id)
+  └─ verified = True
+  └─ state: AboutNow        → inline prompt with 2 buttons:
+                              [✏️ Write about now] → user types bio → saved → SendHub
+                              [⏭ Write about later] → FSM cleared → SendHub
 ```
 
 ### 2. Hub Panel (`/start` for verified users)
@@ -279,6 +283,7 @@ SendHub(chat_id)
 
 HubKeyboard buttons:
   ├─ "Find person"         → enters Find FSM
+  ├─ "My About"            → edits hub message to About sub-panel
   ├─ "Matching: On/Off"    → toggles TgUser.matching_paused in-place (edits keyboard only)
   └─ "Admin panel"         → visible only to admins; edits hub message to AdminPanel
         └─ sub-panels (Blocking, Admins, Matching) edit same message
@@ -286,7 +291,20 @@ HubKeyboard buttons:
         └─ "Back to hub" → edits back to HubKeyboard
 ```
 
-### 3. Alumni Search (hub button)
+### 3. About Panel (hub button)
+
+```
+Hub → "📝 My About"
+  └─ Edits hub message to About sub-panel
+     Header shows current TgUser.about (or "Not set yet." if empty)
+     Buttons:
+       ├─ "✏️ Write new about" → sends a separate message asking user to type bio
+       │   └─ state: AboutStates.WriteAbout → user types text → saved to TgUser.about
+       │      → state cleared → SendHub (fresh hub message)
+       └─ "⬅️ Back" → edits hub message back to HubKeyboard
+```
+
+### 4. Alumni Search (hub button)
 
 ```
 Find
@@ -299,7 +317,7 @@ Find
                       display NesUser profile for each result
 ```
 
-### 4. Manual Matching (admin-triggered)
+### 5. Manual Matching (admin-triggered)
 
 There is **no automatic scheduler**. An admin must manually trigger each round.
 
@@ -317,7 +335,7 @@ Admin → Matching panel → "▶️ Run Matching Now"
   └─ Report count to admin
 ```
 
-### 5. Feedback Collection (admin-triggered)
+### 6. Feedback Collection (admin-triggered)
 
 ```
 Admin → Matching panel → "📊 Send Feedback Request"
@@ -328,7 +346,7 @@ Admin → Matching panel → "📊 Send Feedback Request"
   └─ Report sent count to admin
 ```
 
-### 6. Admin Panel (hub button, admin users only)
+### 7. Admin Panel (hub button, admin users only)
 
 Requires chat_id to be in `data/admins/admins.json` (checked via `admin_store.Contains()`).
 
@@ -338,7 +356,7 @@ Actions: Download logs | View user messages | Send DM | Broadcast | Block/Unbloc
 
 **Admin change notifications:** When an admin adds or removes another admin, all other admins receive a notification with who performed the action and who was affected.
 
-### 7. Statistics Panel (admin sub-panel)
+### 8. Statistics Panel (admin sub-panel)
 
 ```
 Admin Panel → 📊 Statistics → edits hub message to show Statistics sub-panel

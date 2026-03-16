@@ -22,9 +22,13 @@
   "start.terms_not_accepted": "❌ Please confirm the Terms of Service by clicking `📄 Yes, I accept`\nWithout it you are not allowed to use the service.\n\nIf the button menu is hidden, click the 🎛 icon in the lower right corner",
   "start.verified": "🎉 You've become a verified user with full access to bot's functionality!",
   "start.about": "Let me tell you more about the bot\n...",
+  "start.about_prompt": "Would you like to write a short bio about yourself? It helps other alumni get to know you.",
+  "start.about_write_now": "✏️ Write about now",
+  "start.about_write_later": "⏭ Write about later",
 
   "hub.welcome": "👋 Welcome!\n\nChoose what you'd like to do:",
   "hub.find_person": "🔍 Find Person",
+  "hub.my_about": "📝 My About",
   "hub.admin_panel": "⚙️ Admin Panel",
   "hub.matching_active": "🔔 Matching: On",
   "hub.matching_paused": "🔕 Matching: Off",
@@ -119,6 +123,13 @@
   "admin.stats_alumni": "🎓 Alumni Profile Statistics\n\n📚 Total profiles: {total}\n\n🌍 Top countries:\n{top_countries}\n\n🏙 Top cities:\n{top_cities}\n\n🎓 Top programs:\n{top_programs}\n\n💼 Top industries:\n{top_industries}\n\n🛠 Top professional expertise:\n{top_professional}",
   "admin.stats_activity": "💬 Activity Statistics\n\n📨 Total messages: {total}\n  • Bot: {bot} ({bot_pct})\n  • User: {user} ({user_pct})\n\n📅 Recent activity:\n  • Today: {today}\n  • Last 7 days: {week}\n\n🏆 Most active users (messages sent):\n{top_users}",
   "admin.stats_matching": "🤝 Matching Statistics\n\n✅ Eligible for matching: {eligible}\n👥 Total verified: {verified}\n🔕 Opted out: {opted_out}\n\n🔢 Total rounds run: {total_rounds}\n📅 Last round: {last_round_date}\n📊 Assignments in last round: {last_round_assignments}",
+
+  "about.panel_header": "📝 My About\n\nCurrent bio:\n{current}",
+  "about.not_set": "Not set yet.",
+  "about.button_write_new": "✏️ Write new about",
+  "about.button_back": "⬅️ Back",
+  "about.enter_text": "Send your bio as a text message:",
+  "about.saved": "✅ Your bio has been saved!",
 
   "common.yes": "Yes",
   "common.no": "No",

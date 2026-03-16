@@ -22,9 +22,13 @@
   "start.terms_not_accepted": "❌ Пожалуйста, подтвердите условия Terms of Service, нажав `📄 Да, принимаю`\nБез этого вы не можете пользоваться сервисом.\n\nЕсли кнопки не видно, нажмите иконку 🎛 в правом нижнем углу",
   "start.verified": "🎉 Вы стали подтвержденным пользователем с полным доступом к функциям бота!",
   "start.about": "Давайте расскажу больше о боте\n...",
+  "start.about_prompt": "Хотите написать краткое описание о себе? Это поможет другим выпускникам познакомиться с вами.",
+  "start.about_write_now": "✏️ Написать сейчас",
+  "start.about_write_later": "⏭ Написать позже",
 
   "hub.welcome": "👋 Добро пожаловать!\n\nВыберите действие:",
   "hub.find_person": "🔍 Найти человека",
+  "hub.my_about": "📝 Мой профиль",
   "hub.admin_panel": "⚙️ Панель администратора",
   "hub.matching_active": "🔔 Матчинг: включён",
   "hub.matching_paused": "🔕 Матчинг: выключен",
@@ -119,6 +123,13 @@
   "admin.stats_alumni": "🎓 Профили выпускников\n\n📚 Всего профилей: {total}\n\n🌍 Топ стран:\n{top_countries}\n\n🏙 Топ городов:\n{top_cities}\n\n🎓 Топ программ:\n{top_programs}\n\n💼 Топ отраслей:\n{top_industries}\n\n🛠 Топ профессиональных компетенций:\n{top_professional}",
   "admin.stats_activity": "💬 Статистика активности\n\n📨 Всего сообщений: {total}\n  • Бот: {bot} ({bot_pct})\n  • Пользователи: {user} ({user_pct})\n\n📅 Последняя активность:\n  • Сегодня: {today}\n  • За 7 дней: {week}\n\n🏆 Самые активные пользователи:\n{top_users}",
   "admin.stats_matching": "🤝 Статистика матчинга\n\n✅ Подходят для матчинга: {eligible}\n👥 Всего верифицированных: {verified}\n🔕 Отказались: {opted_out}\n\n🔢 Всего раундов: {total_rounds}\n📅 Последний раунд: {last_round_date}\n📊 Назначений в последнем раунде: {last_round_assignments}",
+
+  "about.panel_header": "📝 Мой профиль\n\nТекущее описание:\n{current}",
+  "about.not_set": "Ещё не заполнено.",
+  "about.button_write_new": "✏️ Написать новое описание",
+  "about.button_back": "⬅️ Назад",
+  "about.enter_text": "Отправьте текст вашего описания:",
+  "about.saved": "✅ Ваше описание сохранено!",
 
   "common.yes": "Да",
   "common.no": "Нет",

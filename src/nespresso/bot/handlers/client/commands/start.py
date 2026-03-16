@@ -1,11 +1,13 @@
 import logging
+from enum import Enum
 
 from aiogram import F, Router, types
+from aiogram.filters.callback_data import CallbackData
 from aiogram.filters.command import Command
 from aiogram.filters.state import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
 
 from nespresso.bot.handlers.client.email.verification import CreateCode
 from nespresso.bot.lib.message.checks import CheckVerified
@@ -31,6 +33,35 @@ class StartStates(StatesGroup):
     EmailGet = State()
     EmailConfirm = State()
     Terms = State()
+    AboutNow = State()
+
+
+class StartAboutAction(str, Enum):
+    WriteNow = "write_now"
+    WriteLater = "write_later"
+
+
+class StartAboutCallbackData(CallbackData, prefix="start_about"):
+    action: StartAboutAction
+
+
+def StartAboutKeyboard(lang: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=t(lang, "start.about_write_now"),
+                    callback_data=StartAboutCallbackData(action=StartAboutAction.WriteNow).pack(),
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=t(lang, "start.about_write_later"),
+                    callback_data=StartAboutCallbackData(action=StartAboutAction.WriteLater).pack(),
+                )
+            ],
+        ]
+    )
 
 
 def LanguageKeyboard() -> ReplyKeyboardMarkup:
@@ -282,7 +313,69 @@ async def CommandStartTerms(message: types.Message, state: FSMContext) -> None:
         reply_markup=ReplyKeyboardRemove(),
     )
 
+    await state.set_state(StartStates.AboutNow)
+    await SendMessage(
+        chat_id=chat_id,
+        text=t(lang, "start.about_prompt"),
+        reply_markup=StartAboutKeyboard(lang),
+    )
+
+
+@router.callback_query(StartAboutCallbackData.filter(F.action == StartAboutAction.WriteNow))
+async def StartAboutWriteNow(
+    callback_query: types.CallbackQuery, state: FSMContext
+) -> None:
+    assert isinstance(callback_query.message, types.Message)
+    await callback_query.answer()
+
+    chat_id = callback_query.from_user.id
+    lang = await GetUserLanguage(chat_id)
+
+    try:
+        await callback_query.message.delete()
+    except Exception:
+        pass
+
+    await SendMessage(
+        chat_id=chat_id,
+        text=t(lang, "about.enter_text"),
+    )
+    await state.set_state(StartStates.AboutNow)
+
+
+@router.callback_query(StartAboutCallbackData.filter(F.action == StartAboutAction.WriteLater))
+async def StartAboutWriteLater(
+    callback_query: types.CallbackQuery, state: FSMContext
+) -> None:
+    assert isinstance(callback_query.message, types.Message)
+    await callback_query.answer()
     await state.clear()
+
+    try:
+        await callback_query.message.delete()
+    except Exception:
+        pass
+
+    from nespresso.bot.handlers.client.commands.hub import SendHub
+
+    await SendHub(callback_query.from_user.id)
+
+
+@router.message(StateFilter(StartStates.AboutNow), F.content_type == "text")
+async def StartAboutNowMessage(message: types.Message, state: FSMContext) -> None:
+    assert message.text is not None
+
+    chat_id = message.chat.id
+    lang = await GetUserLanguage(chat_id)
+    ctx = await GetUserContextService()
+
+    await ctx.UpdateTgUser(chat_id=chat_id, column=TgUser.about, value=message.text)
+    await state.clear()
+
+    await SendMessage(
+        chat_id=chat_id,
+        text=t(lang, "about.saved"),
+    )
 
     from nespresso.bot.handlers.client.commands.hub import SendHub
 
