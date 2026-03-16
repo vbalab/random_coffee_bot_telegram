@@ -11,10 +11,14 @@ from cachetools import TTLCache
 from nespresso.recsys.profile import Profile
 from nespresso.recsys.searching.client import client
 from nespresso.recsys.searching.index import INDEX_NAME, DocAttr, DocSide
+from nespresso.recsys.searching.preprocessing.embedding import CreateEmbedding
+from nespresso.recsys.searching.preprocessing.keywords import ExtractKeywords
+from nespresso.recsys.searching.search_pipeline import PIPELINE_NAME
 
 _TIMEOUT = 60  # alive for 1 hour
-_SCROLL_LIMIT = 1
+_SCROLL_LIMIT = 5  # fetch a batch of 5 per OpenSearch round-trip
 _KNN_LIMIT = 30
+_SCORE_THRESHOLD = 0.1  # drop results below this normalized score [0, 1]
 
 
 @dataclass
@@ -26,22 +30,28 @@ class Page:
     final_text: str | None = None
 
     @classmethod
-    async def FromResponse(cls, response: dict[Any, Any], number: int) -> Page | None:
-        hits = response["hits"]["hits"]
-        assert len(hits) <= 1
-
-        if not hits:
-            return None
-
-        hit = hits[0]
+    async def _FromHit(cls, hit: dict[Any, Any], scroll_id: str, number: int) -> Page:
         nes_id = int(hit["_id"])
-
         return cls(
-            scroll_id=response["_scroll_id"],
+            scroll_id=scroll_id,
             score=float(hit["_score"]),
             number=number,
             profile=await Profile.FromNesId(nes_id),
         )
+
+    @classmethod
+    async def BatchFromResponse(
+        cls,
+        response: dict[Any, Any],
+        start_number: int,
+    ) -> list[Page]:
+        hits = response["hits"]["hits"]
+        scroll_id = response.get("_scroll_id", "")
+        pages = []
+        for i, hit in enumerate(hits):
+            page = await cls._FromHit(hit, scroll_id=scroll_id, number=start_number + i)
+            pages.append(page)
+        return pages
 
     def GetFormattedText(self) -> str:
         if not self.final_text:
@@ -53,82 +63,108 @@ class Page:
 
 
 class ScrollingSearch:
-    def __init__(self) -> None:
+    def __init__(self, exclude_nes_id: int | None = None) -> None:
         self.pages: list[Page] = []
         self.index: int = 0
         self.expired = False
+        self._exclude_nes_id = exclude_nes_id
 
-    def _CreateBody(self, message: types.Message) -> dict[Any, Any]:
-        if not message.text:
-            raise ValueError("Expected message.text to be non-empty")
-
-        attr = DocAttr.FromText(message.text)
-
-        logging.info(f"chat_id={message.chat.id} :: Query text: '{attr.text}'")
-
-        body = {
-            "size": _SCROLL_LIMIT,
-            "_source": False,
-            "query": {
-                "bool": {  # composite query
-                    "should": [  # scores are summed
-                        {
-                            "match": {
-                                f"{DocSide.mynes.value}_{DocAttr.Field.text.value}": attr.text,
-                            }
-                        },
-                        {
-                            "knn": {
-                                f"{DocSide.mynes.value}_{DocAttr.Field.embedding.value}": {
-                                    "vector": attr.embedding,
-                                    "k": _KNN_LIMIT,
-                                }
-                            }
-                        },
-                        {
-                            "match": {
-                                f"{DocSide.cv.value}_{DocAttr.Field.text.value}": attr.text,
-                            }
-                        },
-                        {
-                            "knn": {
-                                f"{DocSide.cv.value}_{DocAttr.Field.embedding.value}": {
-                                    "vector": attr.embedding,
-                                    "k": _KNN_LIMIT,
-                                }
-                            }
-                        },
-                    ]
+    def _CreateBody(
+        self,
+        text: str,
+        keywords: str,
+        embedding: list[float],
+    ) -> dict[Any, Any]:
+        def _text_query(field: str) -> dict[Any, Any]:
+            """BM25 match, optionally boosted by extracted keywords."""
+            if keywords:
+                return {
+                    "bool": {
+                        "should": [
+                            {"match": {field: {"query": text}}},
+                            {"match": {field: {"query": keywords, "boost": 0.5}}},
+                        ]
+                    }
                 }
-            },
+            return {"match": {field: text}}
+
+        hybrid_query: dict[str, Any] = {
+            "queries": [
+                _text_query(f"{DocSide.mynes.value}_{DocAttr.Field.text.value}"),
+                {
+                    "knn": {
+                        f"{DocSide.mynes.value}_{DocAttr.Field.embedding.value}": {
+                            "vector": embedding,
+                            "k": _KNN_LIMIT,
+                        }
+                    }
+                },
+                _text_query(f"{DocSide.cv.value}_{DocAttr.Field.text.value}"),
+                {
+                    "knn": {
+                        f"{DocSide.cv.value}_{DocAttr.Field.embedding.value}": {
+                            "vector": embedding,
+                            "k": _KNN_LIMIT,
+                        }
+                    }
+                },
+            ]
         }
 
-        return body
+        if self._exclude_nes_id is not None:
+            hybrid_query["filter"] = {
+                "bool": {
+                    "must_not": [{"ids": {"values": [str(self._exclude_nes_id)]}}]
+                }
+            }
+
+        return {
+            "size": _SCROLL_LIMIT,
+            "_source": False,
+            "query": {"hybrid": hybrid_query},
+        }
 
     def _CurrentPage(self) -> Page:
         return self.pages[self.index]
+
+    def _FilterByScore(self, pages: list[Page], start_number: int) -> list[Page]:
+        """Drop low-relevance results and renumber sequentially from start_number."""
+        filtered = [p for p in pages if p.score >= _SCORE_THRESHOLD]
+        for i, p in enumerate(filtered):
+            p.number = start_number + i
+        return filtered
 
     async def HybridSearch(self, message: types.Message) -> Page | None:
         if self.pages:
             raise ValueError("HybridSearch() was called more than once.")
 
-        body = self._CreateBody(message)
+        if not message.text:
+            raise ValueError("Expected message.text to be non-empty")
+
+        text = message.text
+        keywords = ExtractKeywords(text)
+        embedding = CreateEmbedding(text)
+
+        logging.info(
+            f"chat_id={message.chat.id} :: Query text: '{text}' | keywords: '{keywords}'"
+        )
+
+        body = self._CreateBody(text, keywords, embedding)
 
         response = await client.search(
             index=INDEX_NAME,
             body=body,
             scroll=f"{_TIMEOUT}m",
+            params={"search_pipeline": PIPELINE_NAME},
         )
 
-        page = await Page.FromResponse(
-            response=response,
-            number=self.index,
-        )
-        if page:
-            self.pages = [page]
+        pages = await Page.BatchFromResponse(response, start_number=0)
+        pages = self._FilterByScore(pages, start_number=0)
 
-        # TODO: check for score (if it is high enough) and output `None`
+        if not pages:
+            return None
 
+        self.pages = pages
         return self._CurrentPage()
 
     def CanScrollFurtherBackward(self) -> bool:
@@ -143,13 +179,14 @@ class ScrollingSearch:
         return self._CurrentPage()
 
     def CanScrollFurtherForward(self) -> bool:
-        return self.index < self.pages[-1].number or not self.expired
+        return self.index < len(self.pages) - 1 or not self.expired
 
     async def ScrollForward(self) -> Page | None:
         if not self.pages:
             raise ValueError("HybridSearch() must be called before scrolling forward.")
 
-        if self.index < self.pages[-1].number:
+        # Serve from buffer if available
+        if self.index < len(self.pages) - 1:
             self.index += 1
             return self._CurrentPage()
 
@@ -159,24 +196,20 @@ class ScrollingSearch:
         try:
             response = await client.scroll(
                 scroll_id=self.pages[-1].scroll_id,
-                scroll=f"{_TIMEOUT}m",  # refresh
+                scroll=f"{_TIMEOUT}m",  # refresh TTL
             )
         except Exception:
             self.expired = True
             return None
 
-        page = await Page.FromResponse(
-            response=response,
-            number=self.index + 1,
-        )
+        new_pages = await Page.BatchFromResponse(response, start_number=len(self.pages))
+        new_pages = self._FilterByScore(new_pages, start_number=len(self.pages))
 
-        if not page:
+        if not new_pages:
             self.expired = True
             return None
 
-        # TODO: check for score (if it is high enough) and output `None`
-
-        self.pages.append(page)
+        self.pages.extend(new_pages)
         self.index += 1
 
         return self._CurrentPage()

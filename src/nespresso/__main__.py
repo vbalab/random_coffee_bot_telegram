@@ -23,11 +23,13 @@ from nespresso.recsys.matching.schedule import (
 )
 from nespresso.recsys.searching.client import CloseOpenSearchClient
 from nespresso.recsys.searching.index import EnsureOpenSearchIndex
+from nespresso.recsys.searching.search_pipeline import EnsureSearchPipeline
 
 
 async def EnsureDependencies() -> None:
     await EnsureDB()
     await EnsureOpenSearchIndex()
+    await EnsureSearchPipeline()
 
 
 async def OnStartup() -> None:
