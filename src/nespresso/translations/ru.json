@@ -110,6 +110,10 @@
   "admin.stats_button_activity": "💬 Активность",
   "admin.stats_button_matching": "🤝 Матчинг",
   "admin.stats_button_download_db": "⬇️ Скачать БД",
+  "admin.stats_db_header": "⬇️ Скачать БД\n\nВыберите таблицу для скачивания:",
+  "admin.stats_db_button_tg_user": "👤 tg_user",
+  "admin.stats_db_button_nes_user": "🎓 nes_user",
+  "admin.stats_db_button_message": "💬 message",
 
   "admin.stats_users": "📊 Статистика пользователей\n\n👥 Всего пользователей: {total}\n✅ Верифицированы: {verified} ({verified_pct})\n⏳ Не верифицированы: {unverified} ({unverified_pct})\n🚫 Заблокированы: {blocked} ({blocked_pct})\n\n🌐 Язык (среди верифицированных):\n  • EN: {lang_en} ({lang_en_pct})\n  • RU: {lang_ru} ({lang_ru_pct})\n\n📝 Заполненность профиля:\n  • С @username: {with_username} ({with_username_pct})\n  • С биографией: {with_about} ({with_about_pct})\n\n📅 Новые регистрации:\n  • За 7 дней: {new_week}\n  • За 30 дней: {new_month}",
   "admin.stats_alumni": "🎓 Профили выпускников\n\n📚 Всего профилей: {total}\n\n🌍 Топ стран:\n{top_countries}\n\n🏙 Топ городов:\n{top_cities}\n\n🎓 Топ программ:\n{top_programs}\n\n💼 Топ отраслей:\n{top_industries}\n\n🛠 Топ профессиональных компетенций:\n{top_professional}",

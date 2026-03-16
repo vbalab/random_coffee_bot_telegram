@@ -35,6 +35,20 @@ class StatisticsCallbackData(CallbackData, prefix="stats"):
     action: StatisticsAction
 
 
+class BackToStatisticsCallbackData(CallbackData, prefix="back_to_stats"):
+    pass
+
+
+class DownloadDBAction(StrEnum):
+    TgUser = "tg_user"
+    NesUser = "nes_user"
+    Message = "message"
+
+
+class DownloadDBCallbackData(CallbackData, prefix="stats_db"):
+    action: DownloadDBAction
+
+
 def StatisticsKeyboard(lang: str) -> InlineKeyboardMarkup:
     def Button(action: StatisticsAction, label_key: str) -> InlineKeyboardButton:
         return InlineKeyboardButton(
@@ -63,11 +77,55 @@ def StatisticsKeyboard(lang: str) -> InlineKeyboardMarkup:
     )
 
 
+def DownloadDBKeyboard(lang: str) -> InlineKeyboardMarkup:
+    def Button(action: DownloadDBAction, label_key: str) -> InlineKeyboardButton:
+        return InlineKeyboardButton(
+            text=t(lang, label_key),
+            callback_data=DownloadDBCallbackData(action=action).pack(),
+        )
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [Button(DownloadDBAction.TgUser, "admin.stats_db_button_tg_user")],
+            [Button(DownloadDBAction.NesUser, "admin.stats_db_button_nes_user")],
+            [Button(DownloadDBAction.Message, "admin.stats_db_button_message")],
+            [
+                InlineKeyboardButton(
+                    text=t(lang, "admin.button_back"),
+                    callback_data=BackToStatisticsCallbackData().pack(),
+                )
+            ],
+        ]
+    )
+
+
 async def ShowStatisticsPanel(chat_id: int) -> None:
     """Edit the hub message to display the statistics sub-panel."""
     lang = await GetUserLanguage(chat_id)
     text = t(lang, "admin.stats_header")
     keyboard = StatisticsKeyboard(lang)
+
+    hub_msg_id = HUB_MESSAGES.get(chat_id)
+    if hub_msg_id is not None:
+        try:
+            await bot.edit_message_text(
+                text=text,
+                chat_id=chat_id,
+                message_id=hub_msg_id,
+                reply_markup=keyboard,
+            )
+            return
+        except TelegramBadRequest:
+            pass
+
+    await SendMessage(chat_id=chat_id, text=text, reply_markup=keyboard)
+
+
+async def ShowDownloadDBPanel(chat_id: int) -> None:
+    """Edit the hub message to display the Download DB sub-panel."""
+    lang = await GetUserLanguage(chat_id)
+    text = t(lang, "admin.stats_db_header")
+    keyboard = DownloadDBKeyboard(lang)
 
     hub_msg_id = HUB_MESSAGES.get(chat_id)
     if hub_msg_id is not None:
@@ -221,36 +279,38 @@ async def _BuildMatchingStatsText(lang: str) -> str:
     )
 
 
-# --- DB export helper ---
+# --- DB export builders (one per table) ---
 
 
-async def _BuildDbExportSheets() -> list[tuple[str, list[str], list[list[str]]]]:
+async def _ExportTgUser(chat_id: int) -> None:
     svc = await GetAnalyticsService()
-    tg_users = await svc.GetAllTgUsers()
-    nes_users = await svc.GetAllNesUsers()
-    messages = await svc.GetAllMessages()
-
-    tg_headers = [
+    users = await svc.GetAllTgUsers()
+    headers = [
         "chat_id", "nes_id", "nes_email", "username", "phone_number",
         "language", "about", "verified", "blocked", "created_at", "updated_at",
     ]
-    tg_rows: list[list[str]] = [
+    rows: list[list[str]] = [
         [
             str(u.chat_id), str(u.nes_id or ""), str(u.nes_email or ""),
             str(u.username or ""), str(u.phone_number or ""), str(u.language or ""),
             str(u.about or ""), str(u.verified), str(u.blocked),
             str(u.created_at), str(u.updated_at),
         ]
-        for u in tg_users
+        for u in users
     ]
+    await SendTemporaryXlsxFile(chat_id=chat_id, sheets=[("tg_user", headers, rows)], filename="tg_user")
 
-    nes_headers = [
+
+async def _ExportNesUser(chat_id: int) -> None:
+    svc = await GetAnalyticsService()
+    users = await svc.GetAllNesUsers()
+    headers = [
         "nes_id", "name", "city", "region", "country", "program", "class_name",
         "hobbies", "industry_expertise", "country_expertise", "professional_expertise",
         "main_work", "additional_work", "pre_nes_education", "post_nes_education",
         "created_at", "updated_at",
     ]
-    nes_rows: list[list[str]] = [
+    rows: list[list[str]] = [
         [
             str(u.nes_id), str(u.name or ""), str(u.city or ""), str(u.region or ""),
             str(u.country or ""), str(u.program or ""), str(u.class_name or ""),
@@ -260,20 +320,20 @@ async def _BuildDbExportSheets() -> list[tuple[str, list[str], list[list[str]]]]
             str(u.pre_nes_education or ""), str(u.post_nes_education or ""),
             str(u.created_at), str(u.updated_at),
         ]
-        for u in nes_users
+        for u in users
     ]
+    await SendTemporaryXlsxFile(chat_id=chat_id, sheets=[("nes_user", headers, rows)], filename="nes_user")
 
-    msg_headers = ["message_id", "chat_id", "side", "text", "time"]
-    msg_rows: list[list[str]] = [
+
+async def _ExportMessage(chat_id: int) -> None:
+    svc = await GetAnalyticsService()
+    messages = await svc.GetAllMessages()
+    headers = ["message_id", "chat_id", "side", "text", "time"]
+    rows: list[list[str]] = [
         [str(m.message_id), str(m.chat_id), m.side.value, m.text, str(m.time)]
         for m in messages
     ]
-
-    return [
-        ("tg_user", tg_headers, tg_rows),
-        ("nes_user", nes_headers, nes_rows),
-        ("message", msg_headers, msg_rows),
-    ]
+    await SendTemporaryXlsxFile(chat_id=chat_id, sheets=[("message", headers, rows)], filename="message")
 
 
 # --- Handlers ---
@@ -329,9 +389,38 @@ async def StatsMatching(callback_query: types.CallbackQuery) -> None:
 async def StatsDownloadDB(callback_query: types.CallbackQuery) -> None:
     assert isinstance(callback_query.message, types.Message)
     await callback_query.answer()
-    sheets = await _BuildDbExportSheets()
-    await SendTemporaryXlsxFile(
-        chat_id=callback_query.message.chat.id,
-        sheets=sheets,
-        filename="db_export",
-    )
+    await ShowDownloadDBPanel(callback_query.message.chat.id)
+
+
+@router.callback_query(BackToStatisticsCallbackData.filter())
+async def BackToStats(callback_query: types.CallbackQuery) -> None:
+    assert isinstance(callback_query.message, types.Message)
+    await callback_query.answer()
+    await ShowStatisticsPanel(callback_query.message.chat.id)
+
+
+@router.callback_query(
+    DownloadDBCallbackData.filter(F.action == DownloadDBAction.TgUser)
+)
+async def DownloadTgUser(callback_query: types.CallbackQuery) -> None:
+    assert isinstance(callback_query.message, types.Message)
+    await callback_query.answer()
+    await _ExportTgUser(callback_query.message.chat.id)
+
+
+@router.callback_query(
+    DownloadDBCallbackData.filter(F.action == DownloadDBAction.NesUser)
+)
+async def DownloadNesUser(callback_query: types.CallbackQuery) -> None:
+    assert isinstance(callback_query.message, types.Message)
+    await callback_query.answer()
+    await _ExportNesUser(callback_query.message.chat.id)
+
+
+@router.callback_query(
+    DownloadDBCallbackData.filter(F.action == DownloadDBAction.Message)
+)
+async def DownloadMessage(callback_query: types.CallbackQuery) -> None:
+    assert isinstance(callback_query.message, types.Message)
+    await callback_query.answer()
+    await _ExportMessage(callback_query.message.chat.id)

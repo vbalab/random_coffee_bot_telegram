@@ -110,6 +110,10 @@
   "admin.stats_button_activity": "💬 Activity",
   "admin.stats_button_matching": "🤝 Matching",
   "admin.stats_button_download_db": "⬇️ Download DB",
+  "admin.stats_db_header": "⬇️ Download DB\n\nChoose a table to download:",
+  "admin.stats_db_button_tg_user": "👤 tg_user",
+  "admin.stats_db_button_nes_user": "🎓 nes_user",
+  "admin.stats_db_button_message": "💬 message",
 
   "admin.stats_users": "📊 User Statistics\n\n👥 Total users: {total}\n✅ Verified: {verified} ({verified_pct})\n⏳ Unverified: {unverified} ({unverified_pct})\n🚫 Blocked: {blocked} ({blocked_pct})\n\n🌐 Language (among verified):\n  • EN: {lang_en} ({lang_en_pct})\n  • RU: {lang_ru} ({lang_ru_pct})\n\n📝 Profile completeness:\n  • With @username: {with_username} ({with_username_pct})\n  • With bio: {with_about} ({with_about_pct})\n\n📅 New registrations:\n  • Last 7 days: {new_week}\n  • Last 30 days: {new_month}",
   "admin.stats_alumni": "🎓 Alumni Profile Statistics\n\n📚 Total profiles: {total}\n\n🌍 Top countries:\n{top_countries}\n\n🏙 Top cities:\n{top_cities}\n\n🎓 Top programs:\n{top_programs}\n\n💼 Top industries:\n{top_industries}\n\n🛠 Top professional expertise:\n{top_professional}",

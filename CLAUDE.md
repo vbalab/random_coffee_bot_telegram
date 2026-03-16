@@ -352,8 +352,10 @@ Sub-panel buttons (each sends a new separate message with stats):
   │                top 5 most active users by message count
   ├─ 🤝 Matching → eligible users (verified non-blocked), opted-out count,
   │                total rounds run, last round date, last round assignments
-  └─ ⬇️ Download DB → sub-panel with one button per table; each sends a
-                       separate single-sheet .xlsx file (via openpyxl)
+  └─ ⬇️ Download DB → edits hub to Download DB sub-panel (Back → Statistics)
+       ├─ 👤 tg_user  → sends tg_user.xlsx
+       ├─ 🎓 nes_user → sends nes_user.xlsx
+       └─ 💬 message  → sends message.xlsx
 ```
 
 ---
