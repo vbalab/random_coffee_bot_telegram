@@ -10,6 +10,7 @@ from nespresso.bot.lib.message.i18n import GetUserLanguage, t
 from nespresso.bot.lib.message.io import SendMessage
 from nespresso.db.models.tg_user import TgUser
 from nespresso.db.services.user_context import GetUserContextService
+from nespresso.recsys.searching.document import UpsertAboutOpenSearch
 
 router = Router()
 
@@ -100,6 +101,10 @@ async def AboutWriteAboutMessage(message: types.Message, state: FSMContext) -> N
 
     await ctx.UpdateTgUser(chat_id=chat_id, column=TgUser.about, value=message.text)
     await state.clear()
+
+    nes_id = await ctx.GetTgUser(chat_id, TgUser.nes_id)
+    if nes_id is not None:
+        await UpsertAboutOpenSearch(nes_id, message.text)
 
     await SendMessage(
         chat_id=chat_id,

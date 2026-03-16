@@ -2,6 +2,7 @@ import logging
 
 from nespresso.recsys.searching.client import client
 from nespresso.recsys.searching.index import INDEX_NAME, DocAttr, DocSide
+from nespresso.recsys.searching.preprocessing.keywords import ExtractKeywords
 
 
 async def UpsertTextOpenSearch(
@@ -29,6 +30,12 @@ async def UpsertTextOpenSearch(
     logging.info(
         f"nes_id={nes_id} :: Document of '{side.value}' side upserted with text: {repr(text)}."
     )
+
+
+async def UpsertAboutOpenSearch(nes_id: int, about_text: str) -> None:
+    keywords = ExtractKeywords(about_text)
+    enriched = f"{about_text}\n{keywords}" if keywords else about_text
+    await UpsertTextOpenSearch(nes_id, DocSide.cv, enriched)
 
 
 async def DeleteUserOpenSearch(nes_id: int) -> None:

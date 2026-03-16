@@ -11,6 +11,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardBu
 
 from nespresso.bot.handlers.client.email.verification import CreateCode
 from nespresso.bot.lib.message.checks import CheckVerified
+from nespresso.recsys.searching.document import UpsertAboutOpenSearch
 from nespresso.bot.lib.message.i18n import (
     GetUserLanguage,
     GetUserLanguageOrNone,
@@ -371,6 +372,10 @@ async def StartAboutNowMessage(message: types.Message, state: FSMContext) -> Non
 
     await ctx.UpdateTgUser(chat_id=chat_id, column=TgUser.about, value=message.text)
     await state.clear()
+
+    nes_id = await ctx.GetTgUser(chat_id, TgUser.nes_id)
+    if nes_id is not None:
+        await UpsertAboutOpenSearch(nes_id, message.text)
 
     await SendMessage(
         chat_id=chat_id,
