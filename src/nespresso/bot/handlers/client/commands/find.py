@@ -4,13 +4,11 @@ from enum import Enum
 
 from aiogram import F, Router, types
 from aiogram.filters.callback_data import CallbackData
-from aiogram.filters.command import Command
 from aiogram.filters.state import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from nespresso.bot.lib.message.checks import CheckVerified
 from nespresso.bot.lib.message.i18n import GetUserLanguage, t
 from nespresso.bot.lib.message.io import ContextIO, SendMessage
 from nespresso.recsys.searching.preprocessing.embedding import CalculateTokenLen
@@ -35,6 +33,11 @@ class FindAction(str, Enum):
 class FindCallbackData(CallbackData, prefix="find"):
     action: FindAction
     search_id: uuid.UUID
+
+
+class FindStates(StatesGroup):
+    Text = State()
+    Forward = State()
 
 
 def FindKeyboard(
@@ -63,29 +66,6 @@ def FindKeyboard(
         return None
 
     return InlineKeyboardMarkup(inline_keyboard=[buttons])
-
-
-class FindStates(StatesGroup):
-    Text = State()
-    Forward = State()
-
-
-@router.message(StateFilter(None), Command("find"))
-async def CommandFind(message: types.Message, state: FSMContext) -> None:
-    lang = await GetUserLanguage(message.chat.id)
-
-    if not await CheckVerified(chat_id=message.chat.id):
-        await SendMessage(
-            chat_id=message.chat.id,
-            text=t(lang, "find.only_registered"),
-        )
-        return
-
-    await SendMessage(
-        chat_id=message.chat.id,
-        text=t(lang, "find.enter_query"),
-    )
-    await state.set_state(FindStates.Text)
 
 
 @router.message(StateFilter(FindStates.Text), F.content_type == "text")

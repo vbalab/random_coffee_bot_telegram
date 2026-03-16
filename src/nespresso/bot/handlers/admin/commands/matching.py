@@ -1,13 +1,12 @@
 from enum import Enum
+from typing import Any
 
 from aiogram import F, Router, types
 from aiogram.filters.callback_data import CallbackData
-from aiogram.filters.command import Command
-from aiogram.filters.state import StateFilter
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from nespresso.bot.lib.message.filters import AdminFilter
-from nespresso.bot.lib.message.io import SendMessage
+from nespresso.bot.handlers.admin.commands.back import BackToAdminPanelCallbackData
+from nespresso.bot.lib.message.i18n import GetUserLanguage, t
 from nespresso.recsys.matching.schedule import (
     GetNextMatchingTime,
     PauseMatching,
@@ -18,46 +17,50 @@ router = Router()
 
 
 class MatchingAction(str, Enum):
-    Pause = "Pause"
-    Resume = "Resume"
-    Leave = "Leave as is"
+    Pause = "pause"
+    Resume = "resume"
+    Leave = "leave"
 
 
 class MatchingCallbackData(CallbackData, prefix="matching"):
     action: MatchingAction
 
 
-def MatchingKeyboard(actions: list[MatchingAction]) -> InlineKeyboardMarkup:
+def MatchingKeyboard(lang: str, actions: list[MatchingAction]) -> InlineKeyboardMarkup:
+    _labels = {
+        MatchingAction.Pause: "admin.matching_button_pause",
+        MatchingAction.Resume: "admin.matching_button_resume",
+        MatchingAction.Leave: "admin.matching_button_leave",
+    }
+
     def Button(action: MatchingAction) -> InlineKeyboardButton:
         return InlineKeyboardButton(
-            text=action.value,
+            text=t(lang, _labels[action]),
             callback_data=MatchingCallbackData(action=action).pack(),
         )
 
-    buttons: list[InlineKeyboardButton] = [Button(a) for a in actions]
+    back_button = InlineKeyboardButton(
+        text=t(lang, "admin.button_back"),
+        callback_data=BackToAdminPanelCallbackData().pack(),
+    )
 
-    return InlineKeyboardMarkup(inline_keyboard=[buttons])
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[Button(a) for a in actions], [back_button]]
+    )
 
 
-@router.message(Command("matching"), StateFilter(None), AdminFilter())
-async def CommandMatching(message: types.Message) -> None:
+def ShowMatchingPanel(lang: str) -> dict[str, Any]:
+    """Return kwargs for edit_text to display the matching panel."""
     next_run_time = GetNextMatchingTime()
 
     if next_run_time is None:
-        await SendMessage(
-            chat_id=message.chat.id,
-            text="🔴 Job is paused.\nNo next run scheduled\n\nDo you want to resume?",
-            reply_markup=MatchingKeyboard(
-                [MatchingAction.Resume, MatchingAction.Leave]
-            ),
-        )
-        return
+        text = t(lang, "admin.matching_paused")
+        keyboard = MatchingKeyboard(lang, [MatchingAction.Resume, MatchingAction.Leave])
+    else:
+        text = t(lang, "admin.matching_active", next_run=next_run_time.isoformat())
+        keyboard = MatchingKeyboard(lang, [MatchingAction.Pause, MatchingAction.Leave])
 
-    await SendMessage(
-        chat_id=message.chat.id,
-        text=f"🟢 Job is active.\nNext run at {next_run_time.isoformat()}\n\nDo you want to pause?",
-        reply_markup=MatchingKeyboard([MatchingAction.Pause, MatchingAction.Leave]),
-    )
+    return {"text": text, "reply_markup": keyboard}
 
 
 @router.callback_query(MatchingCallbackData.filter(F.action == MatchingAction.Resume))
@@ -68,11 +71,12 @@ async def CommandMatchingResume(callback_query: types.CallbackQuery) -> None:
     next_run = GetNextMatchingTime()
     assert next_run is not None
 
+    lang = await GetUserLanguage(callback_query.from_user.id)
     await callback_query.message.edit_text(
-        text=f"🟢 Job resumed.\nNext run at {next_run.isoformat()}",
-        reply_markup=None,
+        text=t(lang, "admin.matching_resumed", next_run=next_run.isoformat()),
+        reply_markup=MatchingKeyboard(lang, [MatchingAction.Pause, MatchingAction.Leave]),
     )
-    await callback_query.answer("Weekly matching resumed")
+    await callback_query.answer(t(lang, "admin.matching_answer_resumed"))
 
 
 @router.callback_query(MatchingCallbackData.filter(F.action == MatchingAction.Pause))
@@ -81,16 +85,18 @@ async def CommandMatchingPause(callback_query: types.CallbackQuery) -> None:
 
     PauseMatching()
 
+    lang = await GetUserLanguage(callback_query.from_user.id)
     await callback_query.message.edit_text(
-        text="🔴 Job paused",
-        reply_markup=None,
+        text=t(lang, "admin.matching_paused_confirmed"),
+        reply_markup=MatchingKeyboard(lang, [MatchingAction.Resume, MatchingAction.Leave]),
     )
-    await callback_query.answer("Weekly matching paused")
+    await callback_query.answer(t(lang, "admin.matching_answer_paused"))
 
 
 @router.callback_query(MatchingCallbackData.filter(F.action == MatchingAction.Leave))
 async def CommandMatchingCancel(callback_query: types.CallbackQuery) -> None:
     assert isinstance(callback_query.message, types.Message)
 
+    lang = await GetUserLanguage(callback_query.from_user.id)
     await callback_query.message.edit_reply_markup(reply_markup=None)
-    await callback_query.answer("Cancelled")
+    await callback_query.answer(t(lang, "admin.matching_answer_leave"))

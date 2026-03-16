@@ -1,6 +1,7 @@
 from enum import Enum
 
 from aiogram import F, Router, types
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters.callback_data import CallbackData
 from aiogram.filters.state import StateFilter
 from aiogram.fsm.context import FSMContext
@@ -9,6 +10,8 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from nespresso.bot.handlers.admin.commands.back import BackToAdminPanelCallbackData
 from nespresso.bot.lib.chat.block import BlockUser, CheckIfBlocked, UnblockUser
+from nespresso.bot.lib.hub_state import HUB_MESSAGES
+from nespresso.bot.lib.message.i18n import GetUserLanguage, t
 from nespresso.bot.lib.message.io import ContextIO, SendMessage
 from nespresso.bot.lifecycle.creator import bot
 from nespresso.db.models.tg_user import TgUser
@@ -18,23 +21,12 @@ router = Router()
 
 
 class BlockingPanelAction(str, Enum):
-    BlockUser = "🚫 Block User"
-    UnblockUser = "✅ Unblock User"
+    BlockUser = "block"
+    UnblockUser = "unblock"
 
 
 class BlockingPanelCallbackData(CallbackData, prefix="blocking_panel"):
     action: BlockingPanelAction
-
-
-class BlockingConfirmAction(str, Enum):
-    Block = "Block"
-    Unblock = "Unblock"
-    Leave = "Leave as is"
-
-
-class BlockingConfirmCallbackData(CallbackData, prefix="blocking_confirm"):
-    action: BlockingConfirmAction
-    chat_id: int
 
 
 class BlockingPanelStates(StatesGroup):
@@ -42,37 +34,31 @@ class BlockingPanelStates(StatesGroup):
     UnblockUsername = State()
 
 
-def BlockingPanelKeyboard() -> InlineKeyboardMarkup:
-    def Button(action: BlockingPanelAction) -> InlineKeyboardButton:
-        return InlineKeyboardButton(
-            text=action.value,
-            callback_data=BlockingPanelCallbackData(action=action).pack(),
-        )
-
+def BlockingPanelKeyboard(lang: str) -> InlineKeyboardMarkup:
     back_button = InlineKeyboardButton(
-        text="⬅️ Back",
+        text=t(lang, "admin.button_back"),
         callback_data=BackToAdminPanelCallbackData().pack(),
     )
 
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [Button(BlockingPanelAction.BlockUser), Button(BlockingPanelAction.UnblockUser)],
+            [
+                InlineKeyboardButton(
+                    text=t(lang, "admin.blocking_button_block"),
+                    callback_data=BlockingPanelCallbackData(
+                        action=BlockingPanelAction.BlockUser
+                    ).pack(),
+                ),
+                InlineKeyboardButton(
+                    text=t(lang, "admin.blocking_button_unblock"),
+                    callback_data=BlockingPanelCallbackData(
+                        action=BlockingPanelAction.UnblockUser
+                    ).pack(),
+                ),
+            ],
             [back_button],
         ]
     )
-
-
-def BlockingConfirmKeyboard(
-    actions: list[BlockingConfirmAction], chat_id: int
-) -> InlineKeyboardMarkup:
-    def Button(action: BlockingConfirmAction) -> InlineKeyboardButton:
-        return InlineKeyboardButton(
-            text=action.value,
-            callback_data=BlockingConfirmCallbackData(action=action, chat_id=chat_id).pack(),
-        )
-
-    buttons: list[InlineKeyboardButton] = [Button(a) for a in actions]
-    return InlineKeyboardMarkup(inline_keyboard=[buttons])
 
 
 async def _GetBlockedUserDisplayName(chat_id: int) -> str:
@@ -94,7 +80,7 @@ async def _GetBlockedUserDisplayName(chat_id: int) -> str:
     return str(chat_id)
 
 
-async def BuildBlockingPanelText() -> str:
+async def BuildBlockingPanelText(lang: str) -> str:
     ctx = await GetUserContextService()
     blocked_ids = await ctx.GetTgUsersOnCondition(
         condition=TgUser.blocked,
@@ -102,17 +88,34 @@ async def BuildBlockingPanelText() -> str:
     )
 
     if not blocked_ids:
-        blocked_section = "No blocked users."
+        blocked_section = t(lang, "admin.blocking_no_blocked")
     else:
         lines = [await _GetBlockedUserDisplayName(chat_id) for chat_id in blocked_ids]
         blocked_section = "\n".join(f"• {line}" for line in lines)
 
-    return f"🚫 Blocking Panel\n\nCurrently blocked users:\n{blocked_section}"
+    return t(lang, "admin.blocking_header", blocked_section=blocked_section)
 
 
 async def ShowBlockingPanel(chat_id: int) -> None:
-    text = await BuildBlockingPanelText()
-    await SendMessage(chat_id=chat_id, text=text, reply_markup=BlockingPanelKeyboard())
+    """Edit the hub message to display the blocking sub-panel."""
+    lang = await GetUserLanguage(chat_id)
+    text = await BuildBlockingPanelText(lang)
+    keyboard = BlockingPanelKeyboard(lang)
+
+    hub_msg_id = HUB_MESSAGES.get(chat_id)
+    if hub_msg_id is not None:
+        try:
+            await bot.edit_message_text(
+                text=text,
+                chat_id=chat_id,
+                message_id=hub_msg_id,
+                reply_markup=keyboard,
+            )
+            return
+        except TelegramBadRequest:
+            pass
+
+    await SendMessage(chat_id=chat_id, text=text, reply_markup=keyboard)
 
 
 # --- Block User ---
@@ -126,9 +129,11 @@ async def BlockingPanelBlock(
 ) -> None:
     assert isinstance(callback_query.message, types.Message)
     await callback_query.answer()
+
+    lang = await GetUserLanguage(callback_query.from_user.id)
     await SendMessage(
         chat_id=callback_query.message.chat.id,
-        text="Enter Telegram username of the user to block (e.g. @vbalab):",
+        text=t(lang, "admin.blocking_enter_block"),
     )
     await state.set_state(BlockingPanelStates.BlockUsername)
 
@@ -137,6 +142,7 @@ async def BlockingPanelBlock(
 async def BlockingPanelBlockUsername(message: types.Message, state: FSMContext) -> None:
     assert message.text is not None
 
+    lang = await GetUserLanguage(message.chat.id)
     username = message.text.replace("@", "").strip()
     ctx = await GetUserContextService()
     chat_id = await ctx.GetTgChatIdBy(tg_username=username)
@@ -144,7 +150,7 @@ async def BlockingPanelBlockUsername(message: types.Message, state: FSMContext) 
     if chat_id is None:
         await SendMessage(
             chat_id=message.chat.id,
-            text=f"No user @{username} found. They need to start the bot first.",
+            text=t(lang, "admin.blocking_not_found", username=username),
             context=ContextIO.UserFailed,
         )
         await state.clear()
@@ -156,16 +162,15 @@ async def BlockingPanelBlockUsername(message: types.Message, state: FSMContext) 
     if blocked:
         await SendMessage(
             chat_id=message.chat.id,
-            text=f"@{username} is already blocked.",
+            text=t(lang, "admin.blocking_already_blocked", username=username),
         )
-        await ShowBlockingPanel(message.chat.id)
-        return
+    else:
+        await BlockUser(chat_id)
+        await SendMessage(
+            chat_id=message.chat.id,
+            text=t(lang, "admin.blocking_blocked", username=username),
+        )
 
-    await BlockUser(chat_id)
-    await SendMessage(
-        chat_id=message.chat.id,
-        text=f"@{username} has been blocked.",
-    )
     await ShowBlockingPanel(message.chat.id)
 
 
@@ -180,17 +185,24 @@ async def BlockingPanelUnblock(
 ) -> None:
     assert isinstance(callback_query.message, types.Message)
     await callback_query.answer()
+
+    lang = await GetUserLanguage(callback_query.from_user.id)
     await SendMessage(
         chat_id=callback_query.message.chat.id,
-        text="Enter Telegram username of the user to unblock (e.g. @vbalab):",
+        text=t(lang, "admin.blocking_enter_unblock"),
     )
     await state.set_state(BlockingPanelStates.UnblockUsername)
 
 
-@router.message(StateFilter(BlockingPanelStates.UnblockUsername), F.content_type == "text")
-async def BlockingPanelUnblockUsername(message: types.Message, state: FSMContext) -> None:
+@router.message(
+    StateFilter(BlockingPanelStates.UnblockUsername), F.content_type == "text"
+)
+async def BlockingPanelUnblockUsername(
+    message: types.Message, state: FSMContext
+) -> None:
     assert message.text is not None
 
+    lang = await GetUserLanguage(message.chat.id)
     username = message.text.replace("@", "").strip()
     ctx = await GetUserContextService()
     chat_id = await ctx.GetTgChatIdBy(tg_username=username)
@@ -198,7 +210,7 @@ async def BlockingPanelUnblockUsername(message: types.Message, state: FSMContext
     if chat_id is None:
         await SendMessage(
             chat_id=message.chat.id,
-            text=f"No user @{username} found. They need to start the bot first.",
+            text=t(lang, "admin.blocking_not_found", username=username),
             context=ContextIO.UserFailed,
         )
         await state.clear()
@@ -210,14 +222,13 @@ async def BlockingPanelUnblockUsername(message: types.Message, state: FSMContext
     if not blocked:
         await SendMessage(
             chat_id=message.chat.id,
-            text=f"@{username} is not blocked.",
+            text=t(lang, "admin.blocking_not_blocked", username=username),
         )
-        await ShowBlockingPanel(message.chat.id)
-        return
+    else:
+        await UnblockUser(chat_id)
+        await SendMessage(
+            chat_id=message.chat.id,
+            text=t(lang, "admin.blocking_unblocked", username=username),
+        )
 
-    await UnblockUser(chat_id)
-    await SendMessage(
-        chat_id=message.chat.id,
-        text=f"@{username} has been unblocked.",
-    )
     await ShowBlockingPanel(message.chat.id)

@@ -1,22 +1,27 @@
 from enum import Enum
 
 from aiogram import F, Router, types
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters.callback_data import CallbackData
-from aiogram.filters.command import Command
 from aiogram.filters.state import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from nespresso.bot.handlers.admin.commands.admins import ShowAdminsPanel
-from nespresso.bot.handlers.admin.commands.back import BackToAdminPanelCallbackData
+from nespresso.bot.handlers.admin.commands.back import (
+    BackToAdminPanelCallbackData,
+    BackToHubCallbackData,
+)
 from nespresso.bot.handlers.admin.commands.blocking import ShowBlockingPanel
 from nespresso.bot.handlers.admin.commands.matching import (
     MatchingAction,
     MatchingKeyboard,
+    ShowMatchingPanel,
 )
+from nespresso.bot.lib.hub_state import HUB_MESSAGES
 from nespresso.bot.lib.message.file import SendTemporaryFileFromText, ToJSONText
-from nespresso.bot.lib.message.filters import AdminFilter
+from nespresso.bot.lib.message.i18n import GetUserLanguage, t
 from nespresso.bot.lib.message.io import (
     ContextIO,
     PersonalMsg,
@@ -24,39 +29,21 @@ from nespresso.bot.lib.message.io import (
     SendMessage,
     SendMessagesToGroup,
 )
+from nespresso.bot.lifecycle.creator import bot
 from nespresso.core.configs.paths import PATH_BOT_LOGS
 from nespresso.db.services.user_context import GetUserContextService
-from nespresso.recsys.matching.schedule import GetNextMatchingTime
 
 router = Router()
 
-_description = """\
-⚙️ Admin Panel
-
-- 📋 Logs — download bot logs
-
-- 💬 Messages — view messages of a user
-
-- 📤 Send — send a message to a user
-
-- 📢 Send All — broadcast to all verified users
-
-- 🚫 Blocking — block or unblock a user
-
-- ⚙️ Matching — control the matching schedule
-
-- 👥 Admins — manage admin list\
-"""
-
 
 class AdminPanelAction(str, Enum):
-    Logs = "📋 Logs"
-    Messages = "💬 Messages"
-    Send = "📤 Send"
-    SendAll = "📢 Send All"
-    Blocking = "🚫 Blocking"
-    Matching = "⚙️ Matching"
-    Admins = "👥 Admins"
+    Logs = "logs"
+    Messages = "messages"
+    Send = "send"
+    SendAll = "send_all"
+    Blocking = "blocking"
+    Matching = "matching"
+    Admins = "admins"
 
 
 class AdminPanelCallbackData(CallbackData, prefix="admin_panel"):
@@ -70,35 +57,61 @@ class AdminPanelStates(StatesGroup):
     SendaMessage = State()
 
 
-def AdminPanelKeyboard() -> InlineKeyboardMarkup:
-    def Button(action: AdminPanelAction) -> InlineKeyboardButton:
+def AdminPanelKeyboard(lang: str) -> InlineKeyboardMarkup:
+    def Button(action: AdminPanelAction, label_key: str) -> InlineKeyboardButton:
         return InlineKeyboardButton(
-            text=action.value,
+            text=t(lang, label_key),
             callback_data=AdminPanelCallbackData(action=action).pack(),
         )
 
+    back_hub_button = InlineKeyboardButton(
+        text=t(lang, "admin.button_back_hub"),
+        callback_data=BackToHubCallbackData().pack(),
+    )
+
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [Button(AdminPanelAction.Logs), Button(AdminPanelAction.Messages)],
-            [Button(AdminPanelAction.Send), Button(AdminPanelAction.SendAll)],
-            [Button(AdminPanelAction.Blocking), Button(AdminPanelAction.Matching)],
-            [Button(AdminPanelAction.Admins)],
+            [
+                Button(AdminPanelAction.Logs, "admin.button_logs"),
+                Button(AdminPanelAction.Messages, "admin.button_messages"),
+            ],
+            [
+                Button(AdminPanelAction.Send, "admin.button_send"),
+                Button(AdminPanelAction.SendAll, "admin.button_send_all"),
+            ],
+            [
+                Button(AdminPanelAction.Blocking, "admin.button_blocking"),
+                Button(AdminPanelAction.Matching, "admin.button_matching"),
+            ],
+            [Button(AdminPanelAction.Admins, "admin.button_admins")],
+            [back_hub_button],
         ]
     )
 
 
+def BuildAdminPanelContent(lang: str) -> tuple[str, InlineKeyboardMarkup]:
+    return t(lang, "admin.panel_header"), AdminPanelKeyboard(lang)
+
+
 async def ShowAdminPanel(chat_id: int) -> None:
-    await SendMessage(
-        chat_id=chat_id,
-        text=_description,
-        reply_markup=AdminPanelKeyboard(),
-    )
+    """Edit the hub message to display the admin panel."""
+    lang = await GetUserLanguage(chat_id)
+    text, keyboard = BuildAdminPanelContent(lang)
 
+    hub_msg_id = HUB_MESSAGES.get(chat_id)
+    if hub_msg_id is not None:
+        try:
+            await bot.edit_message_text(
+                text=text,
+                chat_id=chat_id,
+                message_id=hub_msg_id,
+                reply_markup=keyboard,
+            )
+            return
+        except TelegramBadRequest:
+            pass
 
-@router.message(Command("admin"), AdminFilter())
-async def CommandAdmin(message: types.Message, state: FSMContext) -> None:
-    await state.clear()
-    await ShowAdminPanel(message.chat.id)
+    await SendMessage(chat_id=chat_id, text=text, reply_markup=keyboard)
 
 
 # --- Back to Admin Panel ---
@@ -109,7 +122,13 @@ async def PanelBack(callback_query: types.CallbackQuery, state: FSMContext) -> N
     assert isinstance(callback_query.message, types.Message)
     await callback_query.answer()
     await state.clear()
-    await ShowAdminPanel(callback_query.message.chat.id)
+
+    lang = await GetUserLanguage(callback_query.from_user.id)
+    text, keyboard = BuildAdminPanelContent(lang)
+    try:
+        await callback_query.message.edit_text(text=text, reply_markup=keyboard)
+    except TelegramBadRequest:
+        pass
 
 
 # --- Logs ---
@@ -135,20 +154,13 @@ async def PanelMatching(callback_query: types.CallbackQuery) -> None:
     assert isinstance(callback_query.message, types.Message)
     await callback_query.answer()
 
-    next_run_time = GetNextMatchingTime()
-
-    if next_run_time is None:
-        await SendMessage(
-            chat_id=callback_query.message.chat.id,
-            text="🔴 Job is paused.\nNo next run scheduled\n\nDo you want to resume?",
-            reply_markup=MatchingKeyboard([MatchingAction.Resume, MatchingAction.Leave]),
+    lang = await GetUserLanguage(callback_query.from_user.id)
+    try:
+        await callback_query.message.edit_text(
+            **ShowMatchingPanel(lang)
         )
-    else:
-        await SendMessage(
-            chat_id=callback_query.message.chat.id,
-            text=f"🟢 Job is active.\nNext run at {next_run_time.isoformat()}\n\nDo you want to pause?",
-            reply_markup=MatchingKeyboard([MatchingAction.Pause, MatchingAction.Leave]),
-        )
+    except TelegramBadRequest:
+        pass
 
 
 # --- Send All ---
@@ -162,9 +174,11 @@ async def PanelSendAll(
 ) -> None:
     assert isinstance(callback_query.message, types.Message)
     await callback_query.answer()
+
+    lang = await GetUserLanguage(callback_query.from_user.id)
     await SendMessage(
         chat_id=callback_query.message.chat.id,
-        text="Input text of message to broadcast:",
+        text=t(lang, "admin.broadcast_enter_text"),
     )
     await state.set_state(AdminPanelStates.SendaMessage)
 
@@ -179,8 +193,10 @@ async def PanelSendaMessage(message: types.Message, state: FSMContext) -> None:
     messages = [PersonalMsg(chat_id=chat_id, text=message.text) for chat_id in chat_ids]
     await SendMessagesToGroup(messages)
 
-    await SendMessage(chat_id=message.chat.id, text="Done")
+    lang = await GetUserLanguage(message.chat.id)
+    await SendMessage(chat_id=message.chat.id, text=t(lang, "admin.broadcast_done"))
     await state.clear()
+    await ShowAdminPanel(message.chat.id)
 
 
 # --- Blocking ---
@@ -209,9 +225,11 @@ async def PanelMessages(
 ) -> None:
     assert isinstance(callback_query.message, types.Message)
     await callback_query.answer()
+
+    lang = await GetUserLanguage(callback_query.from_user.id)
     await SendMessage(
         chat_id=callback_query.message.chat.id,
-        text='Enter username and message limit (e.g. "@vbalab 15"):',
+        text=t(lang, "admin.messages_enter_args"),
     )
     await state.set_state(AdminPanelStates.MessagesArgs)
 
@@ -220,11 +238,12 @@ async def PanelMessages(
 async def PanelMessagesArgs(message: types.Message, state: FSMContext) -> None:
     assert message.text is not None
 
+    lang = await GetUserLanguage(message.chat.id)
     parts = message.text.split()
     if len(parts) != 2:  # noqa: PLR2004
         await SendMessage(
             chat_id=message.chat.id,
-            text='Expected format: "@vbalab 15"\nTry again.',
+            text=t(lang, "admin.messages_args_invalid"),
             context=ContextIO.UserFailed,
         )
         await state.clear()
@@ -237,7 +256,7 @@ async def PanelMessagesArgs(message: types.Message, state: FSMContext) -> None:
     if chat_id is None:
         await SendMessage(
             chat_id=message.chat.id,
-            text="User with such credentials doesn't exist.\nAborting",
+            text=t(lang, "admin.user_not_found"),
             context=ContextIO.UserFailed,
         )
         await state.clear()
@@ -246,7 +265,7 @@ async def PanelMessagesArgs(message: types.Message, state: FSMContext) -> None:
     if not limit_str.isdigit():
         await SendMessage(
             chat_id=message.chat.id,
-            text="Limit should be a number, e.g. 50\nTry again",
+            text=t(lang, "admin.limit_not_number"),
             context=ContextIO.UserFailed,
         )
         await state.clear()
@@ -258,6 +277,7 @@ async def PanelMessagesArgs(message: types.Message, state: FSMContext) -> None:
 
     await SendTemporaryFileFromText(chat_id=message.chat.id, text=messages_str)
     await state.clear()
+    await ShowAdminPanel(message.chat.id)
 
 
 # --- Send ---
@@ -269,9 +289,11 @@ async def PanelMessagesArgs(message: types.Message, state: FSMContext) -> None:
 async def PanelSend(callback_query: types.CallbackQuery, state: FSMContext) -> None:
     assert isinstance(callback_query.message, types.Message)
     await callback_query.answer()
+
+    lang = await GetUserLanguage(callback_query.from_user.id)
     await SendMessage(
         chat_id=callback_query.message.chat.id,
-        text="Enter Telegram username (e.g. @vbalab):",
+        text=t(lang, "admin.send_enter_username"),
     )
     await state.set_state(AdminPanelStates.SendUsername)
 
@@ -280,6 +302,7 @@ async def PanelSend(callback_query: types.CallbackQuery, state: FSMContext) -> N
 async def PanelSendUsername(message: types.Message, state: FSMContext) -> None:
     assert message.text is not None
 
+    lang = await GetUserLanguage(message.chat.id)
     username = message.text.replace("@", "").strip()
     ctx = await GetUserContextService()
     chat_id = await ctx.GetTgChatIdBy(tg_username=username)
@@ -287,13 +310,13 @@ async def PanelSendUsername(message: types.Message, state: FSMContext) -> None:
     if chat_id is None:
         await SendMessage(
             chat_id=message.chat.id,
-            text="User with such credentials doesn't exist.\nAborting",
+            text=t(lang, "admin.user_not_found"),
             context=ContextIO.UserFailed,
         )
         await state.clear()
         return
 
-    await SendMessage(chat_id=message.chat.id, text="Input text of message:")
+    await SendMessage(chat_id=message.chat.id, text=t(lang, "admin.send_enter_text"))
     await state.set_state(AdminPanelStates.SendMessage)
     await state.set_data({"chat_id": chat_id})
 
@@ -302,15 +325,19 @@ async def PanelSendUsername(message: types.Message, state: FSMContext) -> None:
 async def PanelSendMessage(message: types.Message, state: FSMContext) -> None:
     assert message.text is not None
 
+    lang = await GetUserLanguage(message.chat.id)
     data = await state.get_data()
     output = await SendMessage(chat_id=data["chat_id"], text=message.text)
 
     if output:
-        await SendMessage(chat_id=message.chat.id, text="Successful")
+        await SendMessage(chat_id=message.chat.id, text=t(lang, "admin.send_successful"))
     else:
-        await SendMessage(chat_id=message.chat.id, text="Unsuccessful")
+        await SendMessage(
+            chat_id=message.chat.id, text=t(lang, "admin.send_unsuccessful")
+        )
 
     await state.clear()
+    await ShowAdminPanel(message.chat.id)
 
 
 # --- Admins ---
