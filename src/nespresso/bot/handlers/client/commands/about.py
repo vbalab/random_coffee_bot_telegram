@@ -9,6 +9,7 @@ from aiogram.fsm.state import State, StatesGroup
 
 from nespresso.bot.lib.message.i18n import GetUserLanguage, t
 from nespresso.bot.lib.message.io import SendMessage
+from nespresso.core.configs.title_store import GetTitle
 from nespresso.db.models.tg_user import TgUser
 from nespresso.db.services.user_context import GetUserContextService
 from nespresso.recsys.searching.document import UpsertAboutOpenSearch
@@ -85,7 +86,7 @@ async def AboutBackCallback(
 
     try:
         await callback_query.message.edit_text(
-            text=t(lang, "hub.welcome"),
+            text=GetTitle(lang),
             reply_markup=HubKeyboard(lang, is_admin),
         )
     except TelegramBadRequest as e:

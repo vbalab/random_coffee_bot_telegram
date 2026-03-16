@@ -1,3 +1,4 @@
+import logging
 from enum import StrEnum
 
 from aiogram import F, Router, types
