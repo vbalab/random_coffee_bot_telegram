@@ -1,3 +1,4 @@
+import logging
 from enum import Enum
 
 from aiogram import F, Router, types
@@ -56,7 +57,7 @@ async def SendHub(chat_id: int) -> None:
         try:
             await bot.delete_message(chat_id=chat_id, message_id=old_id)
         except Exception:
-            pass
+            logging.warning(f"Failed to delete old hub message for chat_id={chat_id} message_id={old_id}", exc_info=True)
 
     msg = await SendMessage(
         chat_id=chat_id,

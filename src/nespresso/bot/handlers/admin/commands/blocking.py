@@ -1,3 +1,4 @@
+import logging
 from enum import Enum
 
 from aiogram import F, Router, types
@@ -67,7 +68,7 @@ async def _GetBlockedUserDisplayName(chat_id: int) -> str:
         if chat.username:
             return f"@{chat.username}"
     except Exception:
-        pass
+        logging.warning(f"Failed to get chat info for chat_id={chat_id}", exc_info=True)
 
     try:
         ctx = await GetUserContextService()
@@ -75,7 +76,7 @@ async def _GetBlockedUserDisplayName(chat_id: int) -> str:
         if username:
             return f"@{username}"
     except Exception:
-        pass
+        logging.warning(f"Failed to get username from DB for chat_id={chat_id}", exc_info=True)
 
     return str(chat_id)
 
