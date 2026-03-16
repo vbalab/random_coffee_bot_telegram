@@ -9,7 +9,8 @@ Being in repository directory:
 ```bash
 python3.12 -m venv venv
 vim venv/bin/activate
-# Then add line at the end of file: export PYTHONPATH="$VIRTUAL_ENV/../src"
+# Then add line at the end of file:
+# export PYTHONPATH="$VIRTUAL_ENV/../src"
 
 source venv/bin/activate
 pip install --no-cache-dir -r requirements.txt -r requirements-dev.txt

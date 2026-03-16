@@ -2,7 +2,6 @@ import json
 
 from nespresso.core.configs.paths import PATH_ADMINS, EnsurePaths
 
-
 DEFAULT_ADMIN_CHAT_IDS = [749410326]
 
 

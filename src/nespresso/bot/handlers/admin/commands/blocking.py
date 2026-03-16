@@ -138,7 +138,9 @@ async def BlockingPanelBlock(
     await state.set_state(BlockingPanelStates.BlockUsername)
 
 
-@router.message(StateFilter(BlockingPanelStates.BlockUsername), F.content_type == "text")
+@router.message(
+    StateFilter(BlockingPanelStates.BlockUsername), F.content_type == "text"
+)
 async def BlockingPanelBlockUsername(message: types.Message, state: FSMContext) -> None:
     assert message.text is not None
 

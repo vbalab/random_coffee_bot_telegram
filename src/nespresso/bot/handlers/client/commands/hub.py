@@ -103,9 +103,7 @@ async def HubAdminCallback(callback_query: types.CallbackQuery) -> None:
 
 
 @router.callback_query(BackToHubCallbackData.filter())
-async def HubBack(
-    callback_query: types.CallbackQuery, state: FSMContext
-) -> None:
+async def HubBack(callback_query: types.CallbackQuery, state: FSMContext) -> None:
     assert isinstance(callback_query.message, types.Message)
     await callback_query.answer()
     await state.clear()

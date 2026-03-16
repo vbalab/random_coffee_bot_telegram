@@ -74,7 +74,9 @@ async def CommandMatchingResume(callback_query: types.CallbackQuery) -> None:
     lang = await GetUserLanguage(callback_query.from_user.id)
     await callback_query.message.edit_text(
         text=t(lang, "admin.matching_resumed", next_run=next_run.isoformat()),
-        reply_markup=MatchingKeyboard(lang, [MatchingAction.Pause, MatchingAction.Leave]),
+        reply_markup=MatchingKeyboard(
+            lang, [MatchingAction.Pause, MatchingAction.Leave]
+        ),
     )
     await callback_query.answer(t(lang, "admin.matching_answer_resumed"))
 
@@ -88,7 +90,9 @@ async def CommandMatchingPause(callback_query: types.CallbackQuery) -> None:
     lang = await GetUserLanguage(callback_query.from_user.id)
     await callback_query.message.edit_text(
         text=t(lang, "admin.matching_paused_confirmed"),
-        reply_markup=MatchingKeyboard(lang, [MatchingAction.Resume, MatchingAction.Leave]),
+        reply_markup=MatchingKeyboard(
+            lang, [MatchingAction.Resume, MatchingAction.Leave]
+        ),
     )
     await callback_query.answer(t(lang, "admin.matching_answer_paused"))
 

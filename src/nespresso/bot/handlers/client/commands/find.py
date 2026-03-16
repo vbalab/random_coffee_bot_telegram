@@ -128,9 +128,7 @@ async def CommandFindCallback(
 
     if search is None:
         await callback_query.message.edit_reply_markup(reply_markup=None)
-        await callback_query.answer(
-            t(lang, "find.search_expired")
-        )
+        await callback_query.answer(t(lang, "find.search_expired"))
 
         return
 
@@ -147,9 +145,7 @@ async def CommandFindCallback(
                     prev=search.index > 0,
                 )
             )
-            await callback_query.answer(
-                t(lang, "find.no_more_pages")
-            )
+            await callback_query.answer(t(lang, "find.no_more_pages"))
 
             return
 

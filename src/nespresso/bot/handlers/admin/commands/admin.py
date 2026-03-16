@@ -1,4 +1,4 @@
-from enum import Enum
+from enum import StrEnum
 
 from aiogram import F, Router, types
 from aiogram.exceptions import TelegramBadRequest
@@ -15,8 +15,6 @@ from nespresso.bot.handlers.admin.commands.back import (
 )
 from nespresso.bot.handlers.admin.commands.blocking import ShowBlockingPanel
 from nespresso.bot.handlers.admin.commands.matching import (
-    MatchingAction,
-    MatchingKeyboard,
     ShowMatchingPanel,
 )
 from nespresso.bot.lib.hub_state import HUB_MESSAGES
@@ -36,7 +34,7 @@ from nespresso.db.services.user_context import GetUserContextService
 router = Router()
 
 
-class AdminPanelAction(str, Enum):
+class AdminPanelAction(StrEnum):
     Logs = "logs"
     Messages = "messages"
     Send = "send"
@@ -156,9 +154,7 @@ async def PanelMatching(callback_query: types.CallbackQuery) -> None:
 
     lang = await GetUserLanguage(callback_query.from_user.id)
     try:
-        await callback_query.message.edit_text(
-            **ShowMatchingPanel(lang)
-        )
+        await callback_query.message.edit_text(**ShowMatchingPanel(lang))
     except TelegramBadRequest:
         pass
 
@@ -169,9 +165,7 @@ async def PanelMatching(callback_query: types.CallbackQuery) -> None:
 @router.callback_query(
     AdminPanelCallbackData.filter(F.action == AdminPanelAction.SendAll)
 )
-async def PanelSendAll(
-    callback_query: types.CallbackQuery, state: FSMContext
-) -> None:
+async def PanelSendAll(callback_query: types.CallbackQuery, state: FSMContext) -> None:
     assert isinstance(callback_query.message, types.Message)
     await callback_query.answer()
 
@@ -205,9 +199,7 @@ async def PanelSendaMessage(message: types.Message, state: FSMContext) -> None:
 @router.callback_query(
     AdminPanelCallbackData.filter(F.action == AdminPanelAction.Blocking)
 )
-async def PanelBlocking(
-    callback_query: types.CallbackQuery, state: FSMContext
-) -> None:
+async def PanelBlocking(callback_query: types.CallbackQuery, state: FSMContext) -> None:
     assert isinstance(callback_query.message, types.Message)
     await callback_query.answer()
     await state.clear()
@@ -220,9 +212,7 @@ async def PanelBlocking(
 @router.callback_query(
     AdminPanelCallbackData.filter(F.action == AdminPanelAction.Messages)
 )
-async def PanelMessages(
-    callback_query: types.CallbackQuery, state: FSMContext
-) -> None:
+async def PanelMessages(callback_query: types.CallbackQuery, state: FSMContext) -> None:
     assert isinstance(callback_query.message, types.Message)
     await callback_query.answer()
 
@@ -283,9 +273,7 @@ async def PanelMessagesArgs(message: types.Message, state: FSMContext) -> None:
 # --- Send ---
 
 
-@router.callback_query(
-    AdminPanelCallbackData.filter(F.action == AdminPanelAction.Send)
-)
+@router.callback_query(AdminPanelCallbackData.filter(F.action == AdminPanelAction.Send))
 async def PanelSend(callback_query: types.CallbackQuery, state: FSMContext) -> None:
     assert isinstance(callback_query.message, types.Message)
     await callback_query.answer()
@@ -330,7 +318,9 @@ async def PanelSendMessage(message: types.Message, state: FSMContext) -> None:
     output = await SendMessage(chat_id=data["chat_id"], text=message.text)
 
     if output:
-        await SendMessage(chat_id=message.chat.id, text=t(lang, "admin.send_successful"))
+        await SendMessage(
+            chat_id=message.chat.id, text=t(lang, "admin.send_successful")
+        )
     else:
         await SendMessage(
             chat_id=message.chat.id, text=t(lang, "admin.send_unsuccessful")
