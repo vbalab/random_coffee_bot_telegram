@@ -16,7 +16,7 @@ from nespresso.recsys.searching.preprocessing.keywords import ExtractKeywords
 from nespresso.recsys.searching.search_pipeline import PIPELINE_NAME
 
 _TIMEOUT = 60  # alive for 1 hour
-_SCROLL_LIMIT = 5  # fetch a batch of 5 per OpenSearch round-trip
+_FETCH_SIZE = 100  # fetch all results in one shot (scroll unsupported with hybrid queries)
 _KNN_LIMIT = 30
 _SCORE_THRESHOLD = 0.1  # drop results below this normalized score [0, 1]
 
@@ -46,10 +46,9 @@ class Page:
         start_number: int,
     ) -> list[Page]:
         hits = response["hits"]["hits"]
-        scroll_id = response.get("_scroll_id", "")
         pages = []
         for i, hit in enumerate(hits):
-            page = await cls._FromHit(hit, scroll_id=scroll_id, number=start_number + i)
+            page = await cls._FromHit(hit, scroll_id="", number=start_number + i)
             pages.append(page)
         return pages
 
@@ -66,7 +65,6 @@ class ScrollingSearch:
     def __init__(self, exclude_nes_id: int | None = None) -> None:
         self.pages: list[Page] = []
         self.index: int = 0
-        self.expired = False
         self._exclude_nes_id = exclude_nes_id
 
     def _CreateBody(
@@ -119,7 +117,7 @@ class ScrollingSearch:
             }
 
         return {
-            "size": _SCROLL_LIMIT,
+            "size": _FETCH_SIZE,
             "_source": False,
             "query": {"hybrid": hybrid_query},
         }
@@ -154,7 +152,6 @@ class ScrollingSearch:
         response = await client.search(
             index=INDEX_NAME,
             body=body,
-            scroll=f"{_TIMEOUT}m",
             params={"search_pipeline": PIPELINE_NAME},
         )
 
@@ -179,48 +176,20 @@ class ScrollingSearch:
         return self._CurrentPage()
 
     def CanScrollFurtherForward(self) -> bool:
-        return self.index < len(self.pages) - 1 or not self.expired
+        return self.index < len(self.pages) - 1
 
     async def ScrollForward(self) -> Page | None:
         if not self.pages:
             raise ValueError("HybridSearch() must be called before scrolling forward.")
 
-        # Serve from buffer if available
-        if self.index < len(self.pages) - 1:
-            self.index += 1
-            return self._CurrentPage()
-
-        if self.expired:
+        if self.index >= len(self.pages) - 1:
             return None
 
-        try:
-            response = await client.scroll(
-                scroll_id=self.pages[-1].scroll_id,
-                scroll=f"{_TIMEOUT}m",  # refresh TTL
-            )
-        except Exception:
-            self.expired = True
-            return None
-
-        new_pages = await Page.BatchFromResponse(response, start_number=len(self.pages))
-        new_pages = self._FilterByScore(new_pages, start_number=len(self.pages))
-
-        if not new_pages:
-            self.expired = True
-            return None
-
-        self.pages.extend(new_pages)
         self.index += 1
-
         return self._CurrentPage()
 
     async def FinishScrolling(self) -> None:
-        if not self.pages:
-            raise ValueError(
-                "HybridSearch() must be called before finishing scrolling."
-            )
-
-        await client.clear_scroll(scroll_id=self.pages[-1].scroll_id)
+        pass  # No scroll context to clear; all results fetched upfront
 
 
 SEARCHES: TTLCache[uuid.UUID, ScrollingSearch] = TTLCache(
