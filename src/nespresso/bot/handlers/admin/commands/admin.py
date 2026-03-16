@@ -241,7 +241,6 @@ async def PanelMessagesArgs(message: types.Message, state: FSMContext) -> None:
             text=t(lang, "admin.messages_args_invalid"),
             context=ContextIO.UserFailed,
         )
-        await state.clear()
         return
 
     tg_username, limit_str = parts
