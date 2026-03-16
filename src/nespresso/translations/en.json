@@ -26,7 +26,7 @@
   "start.about_write_now": "✏️ Write about now",
   "start.about_write_later": "⏭ Write about later",
 
-  "hub.welcome": "👋 Welcome!\n\nChoose what you'd like to do:",
+  "hub.welcome": "👋 Welcome!",
   "hub.find_person": "🔍 Find Person",
   "hub.my_about": "📝 My About",
   "hub.settings": "⚙️ Settings",
@@ -53,7 +53,7 @@
   "find.search_expired": "Search is expired",
   "find.no_more_pages": "No more pages",
 
-  "admin.panel_header": "⚙️ Admin Panel\n\n• 📋 Logs — download bot logs\n• 💬 Messages — view messages of a user\n• 📤 Send — send a message to a user\n• 📢 Send All — broadcast to all verified users\n• 🚫 Blocking — block or unblock a user\n• ⚙️ Matching — run matching or request feedback\n• 👥 Admins — manage admin list\n• 📊 Statistics — view platform analytics",
+  "admin.panel_header": "⚙️ Admin Panel\n\n• 📋 Logs — download bot logs\n• 💬 Messages — view messages of a user\n• 📤 Send — send a message to a user\n• 📢 Send All — broadcast to all verified users\n• 🚫 Blocking — block or unblock a user\n• ⚙️ Matching — run matching or request feedback\n• 👥 Admins — manage admin list\n• 📊 Statistics — view platform analytics\n• 🏷️ Title — edit the hub panel header",
   "admin.button_logs": "📋 Logs",
   "admin.button_messages": "💬 Messages",
   "admin.button_send": "📤 Send",
@@ -62,6 +62,7 @@
   "admin.button_matching": "⚙️ Matching",
   "admin.button_admins": "👥 Admins",
   "admin.button_statistics": "📊 Statistics",
+  "admin.button_title": "🏷️ Title",
   "admin.button_back": "⬅️ Back",
   "admin.button_back_hub": "🏠 Hub",
 
@@ -75,6 +76,12 @@
   "admin.send_enter_text": "Input text of message:",
   "admin.send_successful": "✅ Sent successfully",
   "admin.send_unsuccessful": "❌ Failed to send",
+
+  "admin.title_header": "🏷️ Title Editor\n\nCurrent titles:\n\n🇬🇧 EN: {en_title}\n\n🇷🇺 RU: {ru_title}",
+  "admin.title_button_edit_en": "✏️ Edit EN",
+  "admin.title_button_edit_ru": "✏️ Edit RU",
+  "admin.title_enter_en": "Send the new English hub title:",
+  "admin.title_enter_ru": "Send the new Russian hub title:",
 
   "admin.blocking_header": "🚫 Blocking Panel\n\nCurrently blocked users:\n{blocked_section}",
   "admin.blocking_no_blocked": "No blocked users.",

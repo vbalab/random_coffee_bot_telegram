@@ -13,6 +13,7 @@ from nespresso.bot.lib.hub_state import HUB_MESSAGES
 from nespresso.bot.lib.message.i18n import GetUserLanguage, t
 from nespresso.bot.lib.message.io import SendMessage
 from nespresso.bot.lifecycle.creator import bot
+from nespresso.core.configs.title_store import GetTitle
 from nespresso.db.models.tg_user import TgUser
 from nespresso.db.services.user_context import GetUserContextService
 
@@ -85,7 +86,7 @@ async def SendHub(chat_id: int) -> None:
     is_admin = await ctx.GetTgUser(chat_id, TgUser.is_admin) or False
     msg = await SendMessage(
         chat_id=chat_id,
-        text=t(lang, "hub.welcome"),
+        text=GetTitle(lang),
         reply_markup=HubKeyboard(lang, is_admin),
     )
     if msg is not None:
@@ -182,7 +183,7 @@ async def HubBack(callback_query: types.CallbackQuery, state: FSMContext) -> Non
     is_admin = await ctx.GetTgUser(chat_id, TgUser.is_admin) or False
     try:
         await callback_query.message.edit_text(
-            text=t(lang, "hub.welcome"),
+            text=GetTitle(lang),
             reply_markup=HubKeyboard(lang, is_admin),
         )
     except TelegramBadRequest:

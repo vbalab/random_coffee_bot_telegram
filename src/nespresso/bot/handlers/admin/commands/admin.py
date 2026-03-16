@@ -18,6 +18,7 @@ from nespresso.bot.handlers.admin.commands.matching import (
     ShowMatchingPanel,
 )
 from nespresso.bot.handlers.admin.commands.statistics import ShowStatisticsPanel
+from nespresso.bot.handlers.admin.commands.title import ShowTitlePanel
 from nespresso.bot.lib.hub_state import HUB_MESSAGES
 from nespresso.bot.lib.message.file import SendTemporaryFileFromText, ToJSONText
 from nespresso.bot.lib.message.i18n import GetUserLanguage, t
@@ -45,6 +46,7 @@ class AdminPanelAction(StrEnum):
     Matching = "matching"
     Admins = "admins"
     Statistics = "statistics"
+    Title = "title"
 
 
 class AdminPanelCallbackData(CallbackData, prefix="admin_panel"):
@@ -87,6 +89,9 @@ def AdminPanelKeyboard(lang: str) -> InlineKeyboardMarkup:
             [
                 Button(AdminPanelAction.Admins, "admin.button_admins"),
                 Button(AdminPanelAction.Statistics, "admin.button_statistics"),
+            ],
+            [
+                Button(AdminPanelAction.Title, "admin.button_title"),
             ],
             [back_hub_button],
         ]
@@ -366,3 +371,15 @@ async def PanelStatistics(callback_query: types.CallbackQuery) -> None:
     assert isinstance(callback_query.message, types.Message)
     await callback_query.answer()
     await ShowStatisticsPanel(callback_query.message.chat.id)
+
+
+# --- Title ---
+
+
+@router.callback_query(
+    AdminPanelCallbackData.filter(F.action == AdminPanelAction.Title)
+)
+async def PanelTitle(callback_query: types.CallbackQuery) -> None:
+    assert isinstance(callback_query.message, types.Message)
+    await callback_query.answer()
+    await ShowTitlePanel(callback_query.message.chat.id)
