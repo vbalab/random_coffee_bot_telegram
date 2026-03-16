@@ -29,9 +29,21 @@
   "hub.welcome": "👋 Добро пожаловать!\n\nВыберите действие:",
   "hub.find_person": "🔍 Найти человека",
   "hub.my_about": "📝 Мой профиль",
+  "hub.settings": "⚙️ Настройки",
   "hub.admin_panel": "⚙️ Панель администратора",
   "hub.matching_active": "🔔 Матчинг: включён",
   "hub.matching_paused": "🔕 Матчинг: выключен",
+
+  "settings.panel_header": "⚙️ Настройки\n\nУправление настройками:",
+  "settings.button_language": "🌐 Сменить язык",
+  "settings.button_help": "❓ Помощь",
+  "settings.button_back": "⬅️ Назад",
+
+  "help.panel_header": "❓ Помощь\n\nЕсли вам нужна помощь, вы можете отправить запрос администраторам бота. Они получат ваше сообщение и свяжутся с вами.",
+  "help.button_ask": "📨 Запросить помощь",
+  "help.button_back": "⬅️ Назад",
+  "help.request_sent": "✅ Ваш запрос о помощи отправлен администраторам.",
+  "help.admin_notification": "🆘 Запрос помощи от {username} (ID: {chat_id})",
 
   "find.only_registered": "Только зарегистрированные пользователи могут использовать эту функцию",
   "find.enter_query": "Введите запрос для поиска человека",
