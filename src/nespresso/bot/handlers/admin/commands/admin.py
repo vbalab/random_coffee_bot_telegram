@@ -116,8 +116,10 @@ async def ShowAdminPanel(chat_id: int) -> None:
                 reply_markup=keyboard,
             )
             return
-        except TelegramBadRequest:
-            pass
+        except TelegramBadRequest as e:
+            if "message is not modified" in str(e):
+                return
+            # Message was deleted or inaccessible — fall through to send a new one
 
     msg = await SendMessage(chat_id=chat_id, text=text, reply_markup=keyboard)
     if msg is not None:
