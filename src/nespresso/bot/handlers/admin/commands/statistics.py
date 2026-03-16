@@ -1,0 +1,337 @@
+from datetime import datetime
+from enum import StrEnum
+from zoneinfo import ZoneInfo
+
+from aiogram import F, Router, types
+from aiogram.exceptions import TelegramBadRequest
+from aiogram.filters.callback_data import CallbackData
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+from nespresso.bot.handlers.admin.commands.back import BackToAdminPanelCallbackData
+from nespresso.bot.lib.hub_state import HUB_MESSAGES
+from nespresso.bot.lib.message.file import SendTemporaryXlsxFile
+from nespresso.bot.lib.message.i18n import GetUserLanguage, t
+from nespresso.bot.lib.message.io import SendMessage
+from nespresso.bot.lifecycle.creator import bot
+from nespresso.db.models.tg_user import TgUser
+from nespresso.db.services.analytics import GetAnalyticsService
+from nespresso.db.services.user_context import GetUserContextService
+from nespresso.recsys.matching.schedule import GetNextMatchingTime
+
+router = Router()
+
+_MOSCOW_TZ = ZoneInfo("Europe/Moscow")
+
+
+class StatisticsAction(StrEnum):
+    Users = "users"
+    Alumni = "alumni"
+    Activity = "activity"
+    Matching = "matching"
+    DownloadDB = "download_db"
+
+
+class StatisticsCallbackData(CallbackData, prefix="stats"):
+    action: StatisticsAction
+
+
+def StatisticsKeyboard(lang: str) -> InlineKeyboardMarkup:
+    def Button(action: StatisticsAction, label_key: str) -> InlineKeyboardButton:
+        return InlineKeyboardButton(
+            text=t(lang, label_key),
+            callback_data=StatisticsCallbackData(action=action).pack(),
+        )
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                Button(StatisticsAction.Users, "admin.stats_button_users"),
+                Button(StatisticsAction.Alumni, "admin.stats_button_alumni"),
+            ],
+            [
+                Button(StatisticsAction.Activity, "admin.stats_button_activity"),
+                Button(StatisticsAction.Matching, "admin.stats_button_matching"),
+            ],
+            [Button(StatisticsAction.DownloadDB, "admin.stats_button_download_db")],
+            [
+                InlineKeyboardButton(
+                    text=t(lang, "admin.button_back"),
+                    callback_data=BackToAdminPanelCallbackData().pack(),
+                )
+            ],
+        ]
+    )
+
+
+async def ShowStatisticsPanel(chat_id: int) -> None:
+    """Edit the hub message to display the statistics sub-panel."""
+    lang = await GetUserLanguage(chat_id)
+    text = t(lang, "admin.stats_header")
+    keyboard = StatisticsKeyboard(lang)
+
+    hub_msg_id = HUB_MESSAGES.get(chat_id)
+    if hub_msg_id is not None:
+        try:
+            await bot.edit_message_text(
+                text=text,
+                chat_id=chat_id,
+                message_id=hub_msg_id,
+                reply_markup=keyboard,
+            )
+            return
+        except TelegramBadRequest:
+            pass
+
+    await SendMessage(chat_id=chat_id, text=text, reply_markup=keyboard)
+
+
+# --- Stats builders ---
+
+
+def _pct(part: int, total: int) -> str:
+    if total == 0:
+        return "0.0%"
+    return f"{part / total * 100:.1f}%"
+
+
+def _top_list(items: list[tuple[str, int]]) -> str:
+    if not items:
+        return "  —"
+    return "\n".join(f"  {i + 1}. {name} — {count}" for i, (name, count) in enumerate(items))
+
+
+async def _BuildUsersStatsText(lang: str) -> str:
+    svc = await GetAnalyticsService()
+    s = await svc.GetTgUserStats()
+    total = s["total"]
+    verified = s["verified"]
+    return t(
+        lang,
+        "admin.stats_users",
+        total=total,
+        verified=verified,
+        verified_pct=_pct(verified, total),
+        unverified=s["unverified"],
+        unverified_pct=_pct(s["unverified"], total),
+        blocked=s["blocked"],
+        blocked_pct=_pct(s["blocked"], total),
+        lang_en=s["lang_en"],
+        lang_en_pct=_pct(s["lang_en"], verified or 1),
+        lang_ru=s["lang_ru"],
+        lang_ru_pct=_pct(s["lang_ru"], verified or 1),
+        with_username=s["with_username"],
+        with_username_pct=_pct(s["with_username"], total),
+        with_about=s["with_about"],
+        with_about_pct=_pct(s["with_about"], total),
+        new_week=s["new_week"],
+        new_month=s["new_month"],
+    )
+
+
+async def _BuildAlumniStatsText(lang: str) -> str:
+    svc = await GetAnalyticsService()
+    s = await svc.GetNesUserStats()
+    top_countries = s["top_countries"]
+    top_cities = s["top_cities"]
+    top_programs = s["top_programs"]
+    top_industries = s["top_industries"]
+    top_professional = s["top_professional"]
+    assert isinstance(top_countries, list)
+    assert isinstance(top_cities, list)
+    assert isinstance(top_programs, list)
+    assert isinstance(top_industries, list)
+    assert isinstance(top_professional, list)
+    return t(
+        lang,
+        "admin.stats_alumni",
+        total=s["total"],
+        top_countries=_top_list(top_countries),
+        top_cities=_top_list(top_cities),
+        top_programs=_top_list(top_programs),
+        top_industries=_top_list(top_industries),
+        top_professional=_top_list(top_professional),
+    )
+
+
+async def _BuildActivityStatsText(lang: str) -> str:
+    svc = await GetAnalyticsService()
+    s = await svc.GetActivityStats()
+    total = s["total"]
+    bot_msgs = s["bot"]
+    user_msgs = s["user"]
+    top_users_raw = s["top_users"]
+    assert isinstance(total, int)
+    assert isinstance(bot_msgs, int)
+    assert isinstance(user_msgs, int)
+    assert isinstance(top_users_raw, list)
+
+    ctx = await GetUserContextService()
+    top_lines = []
+    for i, (chat_id, cnt) in enumerate(top_users_raw):
+        username = await ctx.GetTgUser(chat_id=chat_id, column=TgUser.username)
+        display = f"@{username}" if username else str(chat_id)
+        top_lines.append(f"  {i + 1}. {display} — {cnt}")
+    top_users_str = "\n".join(top_lines) if top_lines else "  —"
+
+    return t(
+        lang,
+        "admin.stats_activity",
+        total=total,
+        bot=bot_msgs,
+        bot_pct=_pct(bot_msgs, total),
+        user=user_msgs,
+        user_pct=_pct(user_msgs, total),
+        today=s["today"],
+        week=s["week"],
+        top_users=top_users_str,
+    )
+
+
+async def _BuildMatchingStatsText(lang: str) -> str:
+    ctx = await GetUserContextService()
+    verified_ids = await ctx.GetVerifiedTgUsersChatId()
+    blocked_ids = set(
+        await ctx.GetTgUsersOnCondition(
+            condition=TgUser.blocked,
+            column=TgUser.chat_id,
+        )
+    )
+    eligible = len([cid for cid in verified_ids if cid not in blocked_ids])
+
+    next_run = GetNextMatchingTime()
+    now_moscow = datetime.now(_MOSCOW_TZ)
+    current_week = now_moscow.isocalendar()[1]
+    is_matching_week = current_week % 2 != 0
+
+    status = t(
+        lang,
+        "admin.stats_matching_active" if next_run is not None else "admin.stats_matching_paused",
+    )
+    next_run_str = next_run.strftime("%Y-%m-%d %H:%M %Z") if next_run is not None else "—"
+
+    return t(
+        lang,
+        "admin.stats_matching",
+        eligible=eligible,
+        verified=len(verified_ids),
+        status=status,
+        next_run=next_run_str,
+        current_week=current_week,
+        is_matching_week=t(lang, "common.yes" if is_matching_week else "common.no"),
+    )
+
+
+# --- DB export helper ---
+
+
+async def _BuildDbExportSheets() -> list[tuple[str, list[str], list[list[str]]]]:
+    svc = await GetAnalyticsService()
+    tg_users = await svc.GetAllTgUsers()
+    nes_users = await svc.GetAllNesUsers()
+    messages = await svc.GetAllMessages()
+
+    tg_headers = [
+        "chat_id", "nes_id", "nes_email", "username", "phone_number",
+        "language", "about", "verified", "blocked", "created_at", "updated_at",
+    ]
+    tg_rows: list[list[str]] = [
+        [
+            str(u.chat_id), str(u.nes_id or ""), str(u.nes_email or ""),
+            str(u.username or ""), str(u.phone_number or ""), str(u.language or ""),
+            str(u.about or ""), str(u.verified), str(u.blocked),
+            str(u.created_at), str(u.updated_at),
+        ]
+        for u in tg_users
+    ]
+
+    nes_headers = [
+        "nes_id", "name", "city", "region", "country", "program", "class_name",
+        "hobbies", "industry_expertise", "country_expertise", "professional_expertise",
+        "main_work", "additional_work", "pre_nes_education", "post_nes_education",
+        "created_at", "updated_at",
+    ]
+    nes_rows: list[list[str]] = [
+        [
+            str(u.nes_id), str(u.name or ""), str(u.city or ""), str(u.region or ""),
+            str(u.country or ""), str(u.program or ""), str(u.class_name or ""),
+            str(u.hobbies or ""), str(u.industry_expertise or ""),
+            str(u.country_expertise or ""), str(u.professional_expertise or ""),
+            str(u.main_work or ""), str(u.additional_work or ""),
+            str(u.pre_nes_education or ""), str(u.post_nes_education or ""),
+            str(u.created_at), str(u.updated_at),
+        ]
+        for u in nes_users
+    ]
+
+    msg_headers = ["message_id", "chat_id", "side", "text", "time"]
+    msg_rows: list[list[str]] = [
+        [str(m.message_id), str(m.chat_id), m.side.value, m.text, str(m.time)]
+        for m in messages
+    ]
+
+    return [
+        ("tg_user", tg_headers, tg_rows),
+        ("nes_user", nes_headers, nes_rows),
+        ("message", msg_headers, msg_rows),
+    ]
+
+
+# --- Handlers ---
+
+
+@router.callback_query(
+    StatisticsCallbackData.filter(F.action == StatisticsAction.Users)
+)
+async def StatsUsers(callback_query: types.CallbackQuery) -> None:
+    assert isinstance(callback_query.message, types.Message)
+    await callback_query.answer()
+    lang = await GetUserLanguage(callback_query.from_user.id)
+    text = await _BuildUsersStatsText(lang)
+    await SendMessage(chat_id=callback_query.message.chat.id, text=text)
+
+
+@router.callback_query(
+    StatisticsCallbackData.filter(F.action == StatisticsAction.Alumni)
+)
+async def StatsAlumni(callback_query: types.CallbackQuery) -> None:
+    assert isinstance(callback_query.message, types.Message)
+    await callback_query.answer()
+    lang = await GetUserLanguage(callback_query.from_user.id)
+    text = await _BuildAlumniStatsText(lang)
+    await SendMessage(chat_id=callback_query.message.chat.id, text=text)
+
+
+@router.callback_query(
+    StatisticsCallbackData.filter(F.action == StatisticsAction.Activity)
+)
+async def StatsActivity(callback_query: types.CallbackQuery) -> None:
+    assert isinstance(callback_query.message, types.Message)
+    await callback_query.answer()
+    lang = await GetUserLanguage(callback_query.from_user.id)
+    text = await _BuildActivityStatsText(lang)
+    await SendMessage(chat_id=callback_query.message.chat.id, text=text)
+
+
+@router.callback_query(
+    StatisticsCallbackData.filter(F.action == StatisticsAction.Matching)
+)
+async def StatsMatching(callback_query: types.CallbackQuery) -> None:
+    assert isinstance(callback_query.message, types.Message)
+    await callback_query.answer()
+    lang = await GetUserLanguage(callback_query.from_user.id)
+    text = await _BuildMatchingStatsText(lang)
+    await SendMessage(chat_id=callback_query.message.chat.id, text=text)
+
+
+@router.callback_query(
+    StatisticsCallbackData.filter(F.action == StatisticsAction.DownloadDB)
+)
+async def StatsDownloadDB(callback_query: types.CallbackQuery) -> None:
+    assert isinstance(callback_query.message, types.Message)
+    await callback_query.answer()
+    sheets = await _BuildDbExportSheets()
+    await SendTemporaryXlsxFile(
+        chat_id=callback_query.message.chat.id,
+        sheets=sheets,
+        filename="db_export",
+    )

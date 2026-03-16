@@ -17,6 +17,7 @@ from nespresso.bot.handlers.admin.commands.blocking import ShowBlockingPanel
 from nespresso.bot.handlers.admin.commands.matching import (
     ShowMatchingPanel,
 )
+from nespresso.bot.handlers.admin.commands.statistics import ShowStatisticsPanel
 from nespresso.bot.lib.hub_state import HUB_MESSAGES
 from nespresso.bot.lib.message.file import SendTemporaryFileFromText, ToJSONText
 from nespresso.bot.lib.message.i18n import GetUserLanguage, t
@@ -42,6 +43,7 @@ class AdminPanelAction(StrEnum):
     Blocking = "blocking"
     Matching = "matching"
     Admins = "admins"
+    Statistics = "statistics"
 
 
 class AdminPanelCallbackData(CallbackData, prefix="admin_panel"):
@@ -81,7 +83,10 @@ def AdminPanelKeyboard(lang: str) -> InlineKeyboardMarkup:
                 Button(AdminPanelAction.Blocking, "admin.button_blocking"),
                 Button(AdminPanelAction.Matching, "admin.button_matching"),
             ],
-            [Button(AdminPanelAction.Admins, "admin.button_admins")],
+            [
+                Button(AdminPanelAction.Admins, "admin.button_admins"),
+                Button(AdminPanelAction.Statistics, "admin.button_statistics"),
+            ],
             [back_hub_button],
         ]
     )
@@ -340,3 +345,15 @@ async def PanelAdmins(callback_query: types.CallbackQuery) -> None:
     assert isinstance(callback_query.message, types.Message)
     await callback_query.answer()
     await ShowAdminsPanel(callback_query.message.chat.id)
+
+
+# --- Statistics ---
+
+
+@router.callback_query(
+    AdminPanelCallbackData.filter(F.action == AdminPanelAction.Statistics)
+)
+async def PanelStatistics(callback_query: types.CallbackQuery) -> None:
+    assert isinstance(callback_query.message, types.Message)
+    await callback_query.answer()
+    await ShowStatisticsPanel(callback_query.message.chat.id)

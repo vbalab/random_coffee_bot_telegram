@@ -18,3 +18,4 @@ types-cachetools==6.0.0.20250525
 python-dotenv==1.1.0
 colorlog==6.9.0
 python-json-logger==3.3.0
+openpyxl==3.1.5
