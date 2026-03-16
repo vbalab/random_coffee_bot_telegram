@@ -129,8 +129,9 @@ async def HubAdminCallback(callback_query: types.CallbackQuery) -> None:
     text, keyboard = BuildAdminPanelContent(lang)
     try:
         await callback_query.message.edit_text(text=text, reply_markup=keyboard)
-    except TelegramBadRequest:
-        pass
+    except TelegramBadRequest as e:
+        if "message is not modified" not in str(e):
+            logging.warning(f"Failed to edit hub→admin panel for chat_id={chat_id}: {e}")
 
 
 @router.callback_query(HubCallbackData.filter(F.action == HubAction.Settings))
@@ -148,8 +149,9 @@ async def HubSettingsCallback(callback_query: types.CallbackQuery) -> None:
     text, keyboard = BuildSettingsPanelContent(lang, matching_paused=matching_paused)
     try:
         await callback_query.message.edit_text(text=text, reply_markup=keyboard)
-    except TelegramBadRequest:
-        pass
+    except TelegramBadRequest as e:
+        if "message is not modified" not in str(e):
+            logging.warning(f"Failed to edit hub→settings panel for chat_id={chat_id}: {e}")
 
 
 @router.callback_query(HubCallbackData.filter(F.action == HubAction.About))
@@ -167,8 +169,9 @@ async def HubAboutCallback(callback_query: types.CallbackQuery) -> None:
     text, keyboard = BuildAboutPanelContent(lang, about)
     try:
         await callback_query.message.edit_text(text=text, reply_markup=keyboard)
-    except TelegramBadRequest:
-        pass
+    except TelegramBadRequest as e:
+        if "message is not modified" not in str(e):
+            logging.warning(f"Failed to edit hub→about panel for chat_id={chat_id}: {e}")
 
 
 @router.callback_query(BackToHubCallbackData.filter())
@@ -186,5 +189,6 @@ async def HubBack(callback_query: types.CallbackQuery, state: FSMContext) -> Non
             text=GetTitle(lang),
             reply_markup=HubKeyboard(lang, is_admin),
         )
-    except TelegramBadRequest:
-        pass
+    except TelegramBadRequest as e:
+        if "message is not modified" not in str(e):
+            logging.warning(f"Failed to edit back→hub for chat_id={chat_id}: {e}")

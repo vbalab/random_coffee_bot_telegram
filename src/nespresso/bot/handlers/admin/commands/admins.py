@@ -107,7 +107,7 @@ async def _NotifyAdminsAboutChange(actor_chat_id: int, key: str, **kwargs: str) 
         if username:
             actor_name = f"@{username}"
     except Exception:
-        pass
+        logging.debug(f"Failed to get username for actor chat_id={actor_chat_id}", exc_info=True)
 
     messages: list[PersonalMsg] = []
     for admin_id in other_admins:

@@ -1,3 +1,4 @@
+import logging
 from enum import Enum
 
 from aiogram import F, Router, types
@@ -110,8 +111,9 @@ async def SettingsToggleMatching(callback_query: types.CallbackQuery) -> None:
     _, keyboard = BuildSettingsPanelContent(lang, matching_paused=new_value)
     try:
         await callback_query.message.edit_reply_markup(reply_markup=keyboard)
-    except TelegramBadRequest:
-        pass
+    except TelegramBadRequest as e:
+        if "message is not modified" not in str(e):
+            logging.warning(f"Failed to update matching toggle keyboard for chat_id={chat_id}: {e}")
 
 
 @router.callback_query(SettingsCallbackData.filter(F.action == SettingsAction.ChangeLanguage))
@@ -131,8 +133,9 @@ async def SettingsChangeLanguage(callback_query: types.CallbackQuery) -> None:
     text, keyboard = BuildSettingsPanelContent(new_lang, matching_paused=matching_paused)
     try:
         await callback_query.message.edit_text(text=text, reply_markup=keyboard)
-    except TelegramBadRequest:
-        pass
+    except TelegramBadRequest as e:
+        if "message is not modified" not in str(e):
+            logging.warning(f"Failed to edit settings language toggle for chat_id={chat_id}: {e}")
 
 
 @router.callback_query(SettingsCallbackData.filter(F.action == SettingsAction.Help))
@@ -146,8 +149,9 @@ async def SettingsHelpCallback(callback_query: types.CallbackQuery) -> None:
     text, keyboard = BuildHelpPanelContent(lang)
     try:
         await callback_query.message.edit_text(text=text, reply_markup=keyboard)
-    except TelegramBadRequest:
-        pass
+    except TelegramBadRequest as e:
+        if "message is not modified" not in str(e):
+            logging.warning(f"Failed to edit settings→help panel for chat_id={chat_id}: {e}")
 
 
 @router.callback_query(SettingsCallbackData.filter(F.action == SettingsAction.Back))
@@ -167,8 +171,9 @@ async def SettingsBackCallback(callback_query: types.CallbackQuery) -> None:
             text=t(lang, "hub.welcome"),
             reply_markup=HubKeyboard(lang, is_admin),
         )
-    except TelegramBadRequest:
-        pass
+    except TelegramBadRequest as e:
+        if "message is not modified" not in str(e):
+            logging.warning(f"Failed to edit settings→hub for chat_id={chat_id}: {e}")
 
 
 @router.callback_query(HelpCallbackData.filter(F.action == HelpAction.AskHelp))
@@ -205,5 +210,6 @@ async def HelpBackCallback(callback_query: types.CallbackQuery) -> None:
     text, keyboard = BuildSettingsPanelContent(lang, matching_paused=matching_paused)
     try:
         await callback_query.message.edit_text(text=text, reply_markup=keyboard)
-    except TelegramBadRequest:
-        pass
+    except TelegramBadRequest as e:
+        if "message is not modified" not in str(e):
+            logging.warning(f"Failed to edit help→settings for chat_id={chat_id}: {e}")

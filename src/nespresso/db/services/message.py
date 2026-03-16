@@ -14,7 +14,7 @@ class MessageService:
         await self.message_repo.AddMessage(
             message_id=message.message_id,
             chat_id=message.chat.id,
-            text=str(message.text),
+            text=message.text or "",
             side=MessageSide.User,
         )
 
@@ -22,6 +22,6 @@ class MessageService:
         await self.message_repo.AddMessage(
             message_id=message.message_id,
             chat_id=message.chat.id,
-            text=str(message.text),
+            text=message.text or message.caption or "",
             side=MessageSide.Bot,
         )
