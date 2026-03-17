@@ -3,9 +3,11 @@ from enum import Enum
 
 from aiogram import F, Router, types
 from aiogram.exceptions import TelegramBadRequest
+from aiogram.filters import Command
 from aiogram.filters.callback_data import CallbackData
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
+from nespresso.bot.lib.message.checks import CheckVerified
 from nespresso.bot.lib.message.i18n import GetUserLanguage, SetUserLanguage, t
 from nespresso.bot.lib.message.io import SendMessage
 from nespresso.core.configs.title_store import GetTitle
@@ -29,6 +31,7 @@ class SettingsCallbackData(CallbackData, prefix="settings"):
 class HelpAction(str, Enum):
     AskHelp = "ask"
     Back = "back"
+    BackToHub = "back_hub"
 
 
 class HelpCallbackData(CallbackData, prefix="help"):
@@ -95,6 +98,27 @@ def BuildHelpPanelContent(lang: str) -> tuple[str, InlineKeyboardMarkup]:
                 InlineKeyboardButton(
                     text=t(lang, "help.button_back"),
                     callback_data=HelpCallbackData(action=HelpAction.Back).pack(),
+                )
+            ],
+        ]
+    )
+    return t(lang, "help.panel_header"), keyboard
+
+
+def BuildHelpCommandPanelContent(lang: str) -> tuple[str, InlineKeyboardMarkup]:
+    """Help panel for use with the /help command (Back returns to hub)."""
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=t(lang, "help.button_ask"),
+                    callback_data=HelpCallbackData(action=HelpAction.AskHelp).pack(),
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=t(lang, "help.button_back"),
+                    callback_data=HelpCallbackData(action=HelpAction.BackToHub).pack(),
                 )
             ],
         ]
@@ -233,3 +257,30 @@ async def HelpBackCallback(callback_query: types.CallbackQuery) -> None:
     except TelegramBadRequest as e:
         if "message is not modified" not in str(e):
             logging.warning(f"Failed to edit help→settings for chat_id={chat_id}: {e}")
+
+
+@router.callback_query(HelpCallbackData.filter(F.action == HelpAction.BackToHub))
+async def HelpBackToHubCallback(callback_query: types.CallbackQuery) -> None:
+    assert isinstance(callback_query.message, types.Message)
+    await callback_query.answer()
+
+    chat_id = callback_query.from_user.id
+    try:
+        await callback_query.message.delete()
+    except TelegramBadRequest as e:
+        logging.warning(f"Failed to delete help message for chat_id={chat_id}: {e}")
+
+    from nespresso.bot.handlers.client.commands.hub import SendHub
+
+    await SendHub(chat_id)
+
+
+@router.message(Command("help"))
+async def HelpCommand(message: types.Message) -> None:
+    chat_id = message.chat.id
+    if not await CheckVerified(chat_id):
+        return
+
+    lang = await GetUserLanguage(chat_id)
+    text, keyboard = BuildHelpCommandPanelContent(lang)
+    await SendMessage(chat_id=chat_id, text=text, reply_markup=keyboard)
