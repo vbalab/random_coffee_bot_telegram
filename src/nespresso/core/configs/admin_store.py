@@ -1,7 +1,8 @@
+from nespresso.core.configs.admin_ids import DEFAULT_ADMIN_IDS
 from nespresso.db.models.tg_user import TgUser
 from nespresso.db.services.user_context import GetUserContextService
 
-_DEFAULT_ADMIN_IDS = [749410326]
+_DEFAULT_ADMIN_IDS = DEFAULT_ADMIN_IDS
 
 
 async def GetAdminIds() -> list[int]:

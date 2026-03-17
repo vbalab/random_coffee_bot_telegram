@@ -8,6 +8,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from nespresso.bot.lib.message.i18n import GetUserLanguage, SetUserLanguage, t
 from nespresso.bot.lib.message.io import SendMessage
+from nespresso.core.configs.title_store import GetTitle
 from nespresso.db.models.tg_user import TgUser
 from nespresso.db.services.user_context import GetUserContextService
 
@@ -168,7 +169,7 @@ async def SettingsBackCallback(callback_query: types.CallbackQuery) -> None:
 
     try:
         await callback_query.message.edit_text(
-            text=t(lang, "hub.welcome"),
+            text=GetTitle(lang),
             reply_markup=HubKeyboard(lang, is_admin),
         )
     except TelegramBadRequest as e:
@@ -188,8 +189,7 @@ async def HelpAskCallback(callback_query: types.CallbackQuery) -> None:
     user = await ctx.GetTgUser(chat_id)
     username = f"@{user.username}" if user and user.username else str(chat_id)
 
-    ctx_admin = await GetUserContextService()
-    for admin_id in await ctx_admin.GetAdminChatIds():
+    for admin_id in await ctx.GetAdminChatIds():
         admin_lang = await GetUserLanguage(admin_id)
         notification = t(admin_lang, "help.admin_notification", username=username, chat_id=chat_id)
         await SendMessage(chat_id=admin_id, text=notification)

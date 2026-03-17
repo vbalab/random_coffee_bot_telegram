@@ -261,13 +261,10 @@ async def _BuildActivityStatsText(lang: str) -> str:
 async def _BuildMatchingStatsText(lang: str) -> str:
     ctx = await GetUserContextService()
     verified_ids = await ctx.GetVerifiedTgUsersChatId()
-    blocked_ids = set(
-        await ctx.GetTgUsersOnCondition(
-            condition=TgUser.blocked,
-            column=TgUser.chat_id,
-        )
+    eligible_ids = await ctx.GetTgUsersOnCondition(
+        condition=TgUser.verified & ~TgUser.blocked & ~TgUser.matching_paused & TgUser.nes_id.isnot(None),
+        column=TgUser.chat_id,
     )
-    eligible = len([cid for cid in verified_ids if cid not in blocked_ids])
 
     svc = await GetAnalyticsService()
     ms = await svc.GetMatchingStats()
@@ -275,7 +272,7 @@ async def _BuildMatchingStatsText(lang: str) -> str:
     return t(
         lang,
         "admin.stats_matching",
-        eligible=eligible,
+        eligible=len(eligible_ids),
         verified=len(verified_ids),
         opted_out=ms["opted_out"],
         total_rounds=ms["total_rounds"],

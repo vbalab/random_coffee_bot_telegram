@@ -1,14 +1,13 @@
 import logging
 from typing import TypeVar, overload
 
-_DEFAULT_ADMIN_IDS = [749410326]
-
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError, NoResultFound
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql.elements import ColumnElement
 
+from nespresso.core.configs.admin_ids import DEFAULT_ADMIN_IDS
 from nespresso.db.models.tg_user import TgUser
 from nespresso.db.repositories.checking import (
     CheckColumnBelongsToModel,
@@ -27,7 +26,7 @@ class TgUserRepository:
     async def CreateTgUser(self, chat_id: int) -> None:
         async with self.session() as session:
             try:
-                session.add(TgUser(chat_id=chat_id, is_admin=chat_id in _DEFAULT_ADMIN_IDS))
+                session.add(TgUser(chat_id=chat_id, is_admin=chat_id in DEFAULT_ADMIN_IDS))
 
                 await session.commit()
                 logging.info(f"TgUser(chat_id={chat_id}) created successfully.")
