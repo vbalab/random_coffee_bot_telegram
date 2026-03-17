@@ -71,7 +71,6 @@ async def _NotifyOtherAdmins(actor_chat_id: int, key: str, **kwargs: Any) -> Non
     if not other_admins:
         return
 
-    actor_lang = await GetUserLanguage(actor_chat_id)
     actor_name = f"[{actor_chat_id}]"
     try:
         from nespresso.bot.lib.chat.username import GetTgUsername

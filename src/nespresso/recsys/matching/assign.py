@@ -7,6 +7,9 @@ from nespresso.db.models.tg_user import TgUser
 from nespresso.db.services.user_context import GetUserContextService
 from nespresso.recsys.profile import Profile
 
+_MIN_USERS_FOR_MATCHING = 2
+_MIN_USERS_FOR_SECOND_ROUND = 3
+
 
 def _CreateDerangement(
     users: list[int],
@@ -42,7 +45,7 @@ def MatchUsers(
         excluded_pairs = set()
 
     n = len(chat_ids)
-    if n < 2:
+    if n < _MIN_USERS_FOR_MATCHING:
         return {cid: [] for cid in chat_ids}
 
     result: dict[int, list[int]] = {cid: [] for cid in chat_ids}
@@ -60,7 +63,7 @@ def MatchUsers(
         result[uid].append(first[i])
 
     # Second assignment (if 3+ users)
-    if n >= 3:
+    if n >= _MIN_USERS_FOR_SECOND_ROUND:
         # Exclude first-round pairs + historical pairs
         extended_excluded = excluded_pairs | {(chat_ids[i], first[i]) for i in range(n)}
         second = _CreateDerangement(chat_ids, extended_excluded)

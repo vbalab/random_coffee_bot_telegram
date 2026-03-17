@@ -1,4 +1,5 @@
 import json
+import logging
 
 from nespresso.core.configs.paths import PATH_TITLE_STORE
 
@@ -18,7 +19,7 @@ def GetTitle(lang: str) -> str:
             if lang in data:
                 return data[lang]
         except Exception:
-            pass
+            logging.debug("Failed to read title store", exc_info=True)
     return _DEFAULTS.get(lang, "👋")
 
 
