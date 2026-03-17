@@ -12,7 +12,7 @@
   "start.contact_unavailable": "❌ Could not retrieve your phone number since you're not a telegram user.\nPlease try again from your user profile",
   "start.contact_foreign": "❌ You sent someone else's phone number.\nPlease share your own number.\n\nIf the button menu is hidden, click the 🎛 icon in the lower right corner",
   "common.thanks": "✅ Thank you!",
-  "start.enter_email": "Please enter your NES alumni e-mail to continue",
+  "start.enter_email": "Please enter your NES alumni e-mail to continue\n\nIf you've lost access to e-mail, ask for /help",
   "start.email_invalid": "An email should have '@nes.ru' in it",
   "start.email_taken": "❌ This email is already registered by another account.",
   "start.sending_code": "Sending a code.\nPlease wait",
