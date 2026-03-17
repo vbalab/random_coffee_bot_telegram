@@ -113,7 +113,9 @@ async def CommandFindText(message: types.Message, state: FSMContext) -> None:
     await SendMessage(
         chat_id=message.chat.id,
         text=page.GetFormattedText(),
-        reply_markup=FindKeyboard(search_id=search_id, next=search.CanScrollFurtherForward()),
+        reply_markup=FindKeyboard(
+            search_id=search_id, next=search.CanScrollFurtherForward()
+        ),
     )
 
     await state.clear()

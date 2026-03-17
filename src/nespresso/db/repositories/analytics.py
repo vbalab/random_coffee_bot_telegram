@@ -1,5 +1,5 @@
 from collections import Counter
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -15,7 +15,7 @@ class AnalyticsRepository:
         self.session = session
 
     async def GetTgUserStats(self) -> dict[str, int]:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         week_ago = now - timedelta(days=7)
         month_ago = now - timedelta(days=30)
 
@@ -120,14 +120,12 @@ class AnalyticsRepository:
     async def GetActivityStats(
         self,
     ) -> dict[str, int | list[tuple[int, int]]]:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         week_ago = now - timedelta(days=7)
 
         async with self.session() as session:
-            total = (
-                await session.scalar(select(func.count()).select_from(Message)) or 0
-            )
+            total = await session.scalar(select(func.count()).select_from(Message)) or 0
             bot_msgs = (
                 await session.scalar(
                     select(func.count()).where(Message.side == MessageSide.Bot)
@@ -172,9 +170,7 @@ class AnalyticsRepository:
 
     async def GetAllTgUsers(self) -> list[TgUser]:
         async with self.session() as session:
-            result = await session.execute(
-                select(TgUser).order_by(TgUser.created_at)
-            )
+            result = await session.execute(select(TgUser).order_by(TgUser.created_at))
             return list(result.scalars().all())
 
     async def GetAllNesUsers(self) -> list[NesUser]:

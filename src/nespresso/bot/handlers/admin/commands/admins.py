@@ -13,7 +13,12 @@ from nespresso.bot.handlers.admin.commands.back import BackToAdminPanelCallbackD
 from nespresso.bot.lib.chat.username import GetTgUsername
 from nespresso.bot.lib.hub_state import HUB_MESSAGES
 from nespresso.bot.lib.message.i18n import GetUserLanguage, t
-from nespresso.bot.lib.message.io import ContextIO, PersonalMsg, SendMessage, SendMessagesToGroup
+from nespresso.bot.lib.message.io import (
+    ContextIO,
+    PersonalMsg,
+    SendMessage,
+    SendMessagesToGroup,
+)
 from nespresso.bot.lifecycle.creator import bot
 from nespresso.core.configs.admin_store import AddAdmin, GetAdminIds, RemoveAdmin
 from nespresso.db.models.tg_user import TgUser
@@ -107,7 +112,9 @@ async def _NotifyAdminsAboutChange(actor_chat_id: int, key: str, **kwargs: str) 
         if username:
             actor_name = f"@{username}"
     except Exception:
-        logging.debug(f"Failed to get username for actor chat_id={actor_chat_id}", exc_info=True)
+        logging.debug(
+            f"Failed to get username for actor chat_id={actor_chat_id}", exc_info=True
+        )
 
     messages: list[PersonalMsg] = []
     for admin_id in other_admins:
@@ -157,7 +164,9 @@ async def ShowAdminsPanel(chat_id: int) -> None:
     if msg is not None:
         HUB_MESSAGES[chat_id] = msg.message_id
         ctx = await GetUserContextService()
-        await ctx.UpdateTgUser(chat_id=chat_id, column=TgUser.panel_message_id, value=msg.message_id)
+        await ctx.UpdateTgUser(
+            chat_id=chat_id, column=TgUser.panel_message_id, value=msg.message_id
+        )
 
 
 # --- Add Admin ---

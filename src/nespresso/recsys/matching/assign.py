@@ -62,9 +62,7 @@ def MatchUsers(
     # Second assignment (if 3+ users)
     if n >= 3:
         # Exclude first-round pairs + historical pairs
-        extended_excluded = excluded_pairs | {
-            (chat_ids[i], first[i]) for i in range(n)
-        }
+        extended_excluded = excluded_pairs | {(chat_ids[i], first[i]) for i in range(n)}
         second = _CreateDerangement(chat_ids, extended_excluded)
         if second is None:
             # Fallback: only exclude the first round pairs (drop history)
@@ -87,7 +85,10 @@ async def CreateMatching(triggered_by: int) -> dict[int, list[int]]:
 
     # Only verified, non-blocked, non-opted-out users with a linked NES profile
     all_users = await ctx.GetTgUsersOnCondition(
-        condition=TgUser.verified & ~TgUser.blocked & ~TgUser.matching_paused & TgUser.nes_id.isnot(None),
+        condition=TgUser.verified
+        & ~TgUser.blocked
+        & ~TgUser.matching_paused
+        & TgUser.nes_id.isnot(None),
         column=TgUser.chat_id,
     )
 

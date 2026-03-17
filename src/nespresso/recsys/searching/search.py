@@ -16,7 +16,9 @@ from nespresso.recsys.searching.preprocessing.keywords import ExtractKeywords
 from nespresso.recsys.searching.search_pipeline import PIPELINE_NAME
 
 _TIMEOUT = 60  # alive for 1 hour
-_FETCH_SIZE = 100  # fetch all results in one shot (scroll unsupported with hybrid queries)
+_FETCH_SIZE = (
+    100  # fetch all results in one shot (scroll unsupported with hybrid queries)
+)
 _KNN_LIMIT = 30
 _SCORE_THRESHOLD = 0.1  # drop results below this normalized score [0, 1]
 
@@ -111,9 +113,7 @@ class ScrollingSearch:
 
         if self._exclude_nes_id is not None:
             hybrid_query["filter"] = {
-                "bool": {
-                    "must_not": [{"ids": {"values": [str(self._exclude_nes_id)]}}]
-                }
+                "bool": {"must_not": [{"ids": {"values": [str(self._exclude_nes_id)]}}]}
             }
 
         return {

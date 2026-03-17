@@ -37,9 +37,7 @@ async def EnsureDB() -> None:
             )
         )
         await conn.execute(
-            text(
-                "ALTER TABLE tg_user ADD COLUMN IF NOT EXISTS panel_message_id BIGINT"
-            )
+            text("ALTER TABLE tg_user ADD COLUMN IF NOT EXISTS panel_message_id BIGINT")
         )
         await conn.execute(
             text(
@@ -55,7 +53,9 @@ async def EnsureDB() -> None:
                 stored_ids = json.loads(_admins_json.read_text())
                 admin_ids_to_seed = list({*admin_ids_to_seed, *stored_ids})
             except Exception:
-                logging.warning("Could not read admins.json for migration", exc_info=True)
+                logging.warning(
+                    "Could not read admins.json for migration", exc_info=True
+                )
 
         for admin_id in admin_ids_to_seed:
             await conn.execute(

@@ -131,7 +131,9 @@ async def HubAdminCallback(callback_query: types.CallbackQuery) -> None:
         await callback_query.message.edit_text(text=text, reply_markup=keyboard)
     except TelegramBadRequest as e:
         if "message is not modified" not in str(e):
-            logging.warning(f"Failed to edit hub→admin panel for chat_id={chat_id}: {e}")
+            logging.warning(
+                f"Failed to edit hub→admin panel for chat_id={chat_id}: {e}"
+            )
 
 
 @router.callback_query(HubCallbackData.filter(F.action == HubAction.Settings))
@@ -144,14 +146,18 @@ async def HubSettingsCallback(callback_query: types.CallbackQuery) -> None:
     ctx = await GetUserContextService()
     matching_paused = await ctx.GetTgUser(chat_id, TgUser.matching_paused) or False
 
-    from nespresso.bot.handlers.client.commands.settings import BuildSettingsPanelContent
+    from nespresso.bot.handlers.client.commands.settings import (
+        BuildSettingsPanelContent,
+    )
 
     text, keyboard = BuildSettingsPanelContent(lang, matching_paused=matching_paused)
     try:
         await callback_query.message.edit_text(text=text, reply_markup=keyboard)
     except TelegramBadRequest as e:
         if "message is not modified" not in str(e):
-            logging.warning(f"Failed to edit hub→settings panel for chat_id={chat_id}: {e}")
+            logging.warning(
+                f"Failed to edit hub→settings panel for chat_id={chat_id}: {e}"
+            )
 
 
 @router.callback_query(HubCallbackData.filter(F.action == HubAction.About))
@@ -171,7 +177,9 @@ async def HubAboutCallback(callback_query: types.CallbackQuery) -> None:
         await callback_query.message.edit_text(text=text, reply_markup=keyboard)
     except TelegramBadRequest as e:
         if "message is not modified" not in str(e):
-            logging.warning(f"Failed to edit hub→about panel for chat_id={chat_id}: {e}")
+            logging.warning(
+                f"Failed to edit hub→about panel for chat_id={chat_id}: {e}"
+            )
 
 
 @router.callback_query(BackToHubCallbackData.filter())

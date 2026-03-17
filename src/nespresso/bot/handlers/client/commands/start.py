@@ -7,11 +7,16 @@ from aiogram.filters.command import Command
 from aiogram.filters.state import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from aiogram.types import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
+)
 
 from nespresso.bot.handlers.client.email.verification import CreateCode
 from nespresso.bot.lib.message.checks import CheckVerified
-from nespresso.recsys.searching.document import UpsertAboutOpenSearch
 from nespresso.bot.lib.message.i18n import (
     GetUserLanguage,
     GetUserLanguageOrNone,
@@ -22,6 +27,7 @@ from nespresso.bot.lib.message.io import ContextIO, SendDocument, SendMessage
 from nespresso.core.configs.paths import PATH_TERMS_OF_USE
 from nespresso.db.models.tg_user import TgUser
 from nespresso.db.services.user_context import GetUserContextService
+from nespresso.recsys.searching.document import UpsertAboutOpenSearch
 
 router = Router()
 
@@ -52,13 +58,17 @@ def StartAboutKeyboard(lang: str) -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(
                     text=t(lang, "start.about_write_now"),
-                    callback_data=StartAboutCallbackData(action=StartAboutAction.WriteNow).pack(),
+                    callback_data=StartAboutCallbackData(
+                        action=StartAboutAction.WriteNow
+                    ).pack(),
                 )
             ],
             [
                 InlineKeyboardButton(
                     text=t(lang, "start.about_write_later"),
-                    callback_data=StartAboutCallbackData(action=StartAboutAction.WriteLater).pack(),
+                    callback_data=StartAboutCallbackData(
+                        action=StartAboutAction.WriteLater
+                    ).pack(),
                 )
             ],
         ]
@@ -322,7 +332,9 @@ async def CommandStartTerms(message: types.Message, state: FSMContext) -> None:
     )
 
 
-@router.callback_query(StartAboutCallbackData.filter(F.action == StartAboutAction.WriteNow))
+@router.callback_query(
+    StartAboutCallbackData.filter(F.action == StartAboutAction.WriteNow)
+)
 async def StartAboutWriteNow(
     callback_query: types.CallbackQuery, state: FSMContext
 ) -> None:
@@ -335,7 +347,10 @@ async def StartAboutWriteNow(
     try:
         await callback_query.message.delete()
     except Exception:
-        logging.debug(f"Failed to delete about-prompt message for chat_id={chat_id}", exc_info=True)
+        logging.debug(
+            f"Failed to delete about-prompt message for chat_id={chat_id}",
+            exc_info=True,
+        )
 
     await SendMessage(
         chat_id=chat_id,
@@ -344,7 +359,9 @@ async def StartAboutWriteNow(
     await state.set_state(StartStates.AboutNow)
 
 
-@router.callback_query(StartAboutCallbackData.filter(F.action == StartAboutAction.WriteLater))
+@router.callback_query(
+    StartAboutCallbackData.filter(F.action == StartAboutAction.WriteLater)
+)
 async def StartAboutWriteLater(
     callback_query: types.CallbackQuery, state: FSMContext
 ) -> None:
@@ -355,7 +372,10 @@ async def StartAboutWriteLater(
     try:
         await callback_query.message.delete()
     except Exception:
-        logging.debug(f"Failed to delete about-prompt message for chat_id={callback_query.from_user.id}", exc_info=True)
+        logging.debug(
+            f"Failed to delete about-prompt message for chat_id={callback_query.from_user.id}",
+            exc_info=True,
+        )
 
     from nespresso.bot.handlers.client.commands.hub import SendHub
 

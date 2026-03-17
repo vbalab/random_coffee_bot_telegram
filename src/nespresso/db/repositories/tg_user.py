@@ -26,7 +26,9 @@ class TgUserRepository:
     async def CreateTgUser(self, chat_id: int) -> None:
         async with self.session() as session:
             try:
-                session.add(TgUser(chat_id=chat_id, is_admin=chat_id in DEFAULT_ADMIN_IDS))
+                session.add(
+                    TgUser(chat_id=chat_id, is_admin=chat_id in DEFAULT_ADMIN_IDS)
+                )
 
                 await session.commit()
                 logging.info(f"TgUser(chat_id={chat_id}) created successfully.")

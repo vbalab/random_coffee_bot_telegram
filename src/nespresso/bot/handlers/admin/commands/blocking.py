@@ -127,7 +127,9 @@ async def ShowBlockingPanel(chat_id: int) -> None:
     if msg is not None:
         HUB_MESSAGES[chat_id] = msg.message_id
         ctx = await GetUserContextService()
-        await ctx.UpdateTgUser(chat_id=chat_id, column=TgUser.panel_message_id, value=msg.message_id)
+        await ctx.UpdateTgUser(
+            chat_id=chat_id, column=TgUser.panel_message_id, value=msg.message_id
+        )
 
 
 # --- Block User ---

@@ -39,7 +39,9 @@ def BuildSettingsPanelContent(
     lang: str, matching_paused: bool
 ) -> tuple[str, InlineKeyboardMarkup]:
     matching_label = (
-        t(lang, "hub.matching_paused") if matching_paused else t(lang, "hub.matching_active")
+        t(lang, "hub.matching_paused")
+        if matching_paused
+        else t(lang, "hub.matching_active")
     )
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
@@ -62,13 +64,17 @@ def BuildSettingsPanelContent(
             [
                 InlineKeyboardButton(
                     text=t(lang, "settings.button_help"),
-                    callback_data=SettingsCallbackData(action=SettingsAction.Help).pack(),
+                    callback_data=SettingsCallbackData(
+                        action=SettingsAction.Help
+                    ).pack(),
                 )
             ],
             [
                 InlineKeyboardButton(
                     text=t(lang, "settings.button_back"),
-                    callback_data=SettingsCallbackData(action=SettingsAction.Back).pack(),
+                    callback_data=SettingsCallbackData(
+                        action=SettingsAction.Back
+                    ).pack(),
                 )
             ],
         ]
@@ -96,7 +102,9 @@ def BuildHelpPanelContent(lang: str) -> tuple[str, InlineKeyboardMarkup]:
     return t(lang, "help.panel_header"), keyboard
 
 
-@router.callback_query(SettingsCallbackData.filter(F.action == SettingsAction.ToggleMatching))
+@router.callback_query(
+    SettingsCallbackData.filter(F.action == SettingsAction.ToggleMatching)
+)
 async def SettingsToggleMatching(callback_query: types.CallbackQuery) -> None:
     assert isinstance(callback_query.message, types.Message)
     await callback_query.answer()
@@ -114,10 +122,14 @@ async def SettingsToggleMatching(callback_query: types.CallbackQuery) -> None:
         await callback_query.message.edit_reply_markup(reply_markup=keyboard)
     except TelegramBadRequest as e:
         if "message is not modified" not in str(e):
-            logging.warning(f"Failed to update matching toggle keyboard for chat_id={chat_id}: {e}")
+            logging.warning(
+                f"Failed to update matching toggle keyboard for chat_id={chat_id}: {e}"
+            )
 
 
-@router.callback_query(SettingsCallbackData.filter(F.action == SettingsAction.ChangeLanguage))
+@router.callback_query(
+    SettingsCallbackData.filter(F.action == SettingsAction.ChangeLanguage)
+)
 async def SettingsChangeLanguage(callback_query: types.CallbackQuery) -> None:
     assert isinstance(callback_query.message, types.Message)
     await callback_query.answer()
@@ -131,12 +143,16 @@ async def SettingsChangeLanguage(callback_query: types.CallbackQuery) -> None:
     ctx = await GetUserContextService()
     matching_paused = await ctx.GetTgUser(chat_id, TgUser.matching_paused) or False
 
-    text, keyboard = BuildSettingsPanelContent(new_lang, matching_paused=matching_paused)
+    text, keyboard = BuildSettingsPanelContent(
+        new_lang, matching_paused=matching_paused
+    )
     try:
         await callback_query.message.edit_text(text=text, reply_markup=keyboard)
     except TelegramBadRequest as e:
         if "message is not modified" not in str(e):
-            logging.warning(f"Failed to edit settings language toggle for chat_id={chat_id}: {e}")
+            logging.warning(
+                f"Failed to edit settings language toggle for chat_id={chat_id}: {e}"
+            )
 
 
 @router.callback_query(SettingsCallbackData.filter(F.action == SettingsAction.Help))
@@ -152,7 +168,9 @@ async def SettingsHelpCallback(callback_query: types.CallbackQuery) -> None:
         await callback_query.message.edit_text(text=text, reply_markup=keyboard)
     except TelegramBadRequest as e:
         if "message is not modified" not in str(e):
-            logging.warning(f"Failed to edit settings→help panel for chat_id={chat_id}: {e}")
+            logging.warning(
+                f"Failed to edit settings→help panel for chat_id={chat_id}: {e}"
+            )
 
 
 @router.callback_query(SettingsCallbackData.filter(F.action == SettingsAction.Back))
@@ -191,7 +209,9 @@ async def HelpAskCallback(callback_query: types.CallbackQuery) -> None:
 
     for admin_id in await ctx.GetAdminChatIds():
         admin_lang = await GetUserLanguage(admin_id)
-        notification = t(admin_lang, "help.admin_notification", username=username, chat_id=chat_id)
+        notification = t(
+            admin_lang, "help.admin_notification", username=username, chat_id=chat_id
+        )
         await SendMessage(chat_id=admin_id, text=notification)
 
     await SendMessage(chat_id=chat_id, text=t(lang, "help.request_sent"))

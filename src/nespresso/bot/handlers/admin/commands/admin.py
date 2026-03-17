@@ -131,7 +131,9 @@ async def ShowAdminPanel(chat_id: int) -> None:
     if msg is not None:
         HUB_MESSAGES[chat_id] = msg.message_id
         ctx = await GetUserContextService()
-        await ctx.UpdateTgUser(chat_id=chat_id, column=TgUser.panel_message_id, value=msg.message_id)
+        await ctx.UpdateTgUser(
+            chat_id=chat_id, column=TgUser.panel_message_id, value=msg.message_id
+        )
 
 
 # --- Back to Admin Panel ---
@@ -149,7 +151,9 @@ async def PanelBack(callback_query: types.CallbackQuery, state: FSMContext) -> N
         await callback_query.message.edit_text(text=text, reply_markup=keyboard)
     except TelegramBadRequest as e:
         if "message is not modified" not in str(e):
-            logging.warning(f"Failed to edit back→admin panel for chat_id={callback_query.from_user.id}: {e}")
+            logging.warning(
+                f"Failed to edit back→admin panel for chat_id={callback_query.from_user.id}: {e}"
+            )
 
 
 # --- Logs ---
@@ -180,7 +184,9 @@ async def PanelMatching(callback_query: types.CallbackQuery) -> None:
         await callback_query.message.edit_text(**ShowMatchingPanel(lang))
     except TelegramBadRequest as e:
         if "message is not modified" not in str(e):
-            logging.warning(f"Failed to edit admin→matching panel for chat_id={callback_query.from_user.id}: {e}")
+            logging.warning(
+                f"Failed to edit admin→matching panel for chat_id={callback_query.from_user.id}: {e}"
+            )
 
 
 # --- Send All ---

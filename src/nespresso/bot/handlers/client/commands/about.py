@@ -30,7 +30,9 @@ class AboutCallbackData(CallbackData, prefix="about"):
     action: AboutAction
 
 
-def BuildAboutPanelContent(lang: str, about: str | None) -> tuple[str, types.InlineKeyboardMarkup]:
+def BuildAboutPanelContent(
+    lang: str, about: str | None
+) -> tuple[str, types.InlineKeyboardMarkup]:
     current = about if about else t(lang, "about.not_set")
     text = t(lang, "about.panel_header", current=current)
     keyboard = types.InlineKeyboardMarkup(

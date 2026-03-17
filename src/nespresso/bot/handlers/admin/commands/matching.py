@@ -41,7 +41,9 @@ def MatchingKeyboard(lang: str) -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(
                     text=t(lang, "admin.matching_button_run"),
-                    callback_data=MatchingCallbackData(action=MatchingAction.Run).pack(),
+                    callback_data=MatchingCallbackData(
+                        action=MatchingAction.Run
+                    ).pack(),
                 )
             ],
             [
@@ -73,11 +75,14 @@ async def _NotifyOtherAdmins(actor_chat_id: int, key: str, **kwargs: Any) -> Non
     actor_name = f"[{actor_chat_id}]"
     try:
         from nespresso.bot.lib.chat.username import GetTgUsername
+
         username = await GetTgUsername(actor_chat_id)
         if username:
             actor_name = f"@{username}"
     except Exception:
-        logging.debug(f"Failed to get username for actor chat_id={actor_chat_id}", exc_info=True)
+        logging.debug(
+            f"Failed to get username for actor chat_id={actor_chat_id}", exc_info=True
+        )
 
     messages: list[PersonalMsg] = []
     for admin_id in other_admins:
@@ -129,7 +134,9 @@ async def CommandMatchingFeedback(callback_query: types.CallbackQuery) -> None:
 
     assignments = await ctx.GetAssignmentsByRound(round_id=last_round.id)
     if not assignments:
-        await SendMessage(chat_id=chat_id, text=t(lang, "admin.matching_no_assignments"))
+        await SendMessage(
+            chat_id=chat_id, text=t(lang, "admin.matching_no_assignments")
+        )
         return
 
     # Group assignments by assigner
@@ -146,11 +153,15 @@ async def CommandMatchingFeedback(callback_query: types.CallbackQuery) -> None:
             display = str(assigned_chat_id)
             try:
                 from nespresso.bot.lib.chat.username import GetTgUsername
+
                 username = await GetTgUsername(assigned_chat_id)
                 if username:
                     display = f"@{username}"
             except Exception:
-                logging.debug(f"Failed to get username for assigned chat_id={assigned_chat_id}", exc_info=True)
+                logging.debug(
+                    f"Failed to get username for assigned chat_id={assigned_chat_id}",
+                    exc_info=True,
+                )
 
             keyboard = InlineKeyboardMarkup(
                 inline_keyboard=[
@@ -208,6 +219,8 @@ async def HandleFeedbackResponse(
     try:
         await callback_query.message.edit_reply_markup(reply_markup=None)
     except Exception:
-        logging.debug(f"Failed to remove feedback keyboard for chat_id={chat_id}", exc_info=True)
+        logging.debug(
+            f"Failed to remove feedback keyboard for chat_id={chat_id}", exc_info=True
+        )
 
     await callback_query.answer(t(lang, "matching.feedback_thanks"))

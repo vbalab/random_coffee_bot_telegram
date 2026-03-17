@@ -122,7 +122,9 @@ async def ShowStatisticsPanel(chat_id: int) -> None:
     if msg is not None:
         HUB_MESSAGES[chat_id] = msg.message_id
         ctx = await GetUserContextService()
-        await ctx.UpdateTgUser(chat_id=chat_id, column=TgUser.panel_message_id, value=msg.message_id)
+        await ctx.UpdateTgUser(
+            chat_id=chat_id, column=TgUser.panel_message_id, value=msg.message_id
+        )
 
 
 async def ShowDownloadDBPanel(chat_id: int) -> None:
@@ -153,7 +155,9 @@ async def ShowDownloadDBPanel(chat_id: int) -> None:
     if msg is not None:
         HUB_MESSAGES[chat_id] = msg.message_id
         ctx = await GetUserContextService()
-        await ctx.UpdateTgUser(chat_id=chat_id, column=TgUser.panel_message_id, value=msg.message_id)
+        await ctx.UpdateTgUser(
+            chat_id=chat_id, column=TgUser.panel_message_id, value=msg.message_id
+        )
 
 
 # --- Stats builders ---
@@ -168,7 +172,9 @@ def _pct(part: int, total: int) -> str:
 def _top_list(items: list[tuple[str, int]]) -> str:
     if not items:
         return "  —"
-    return "\n".join(f"  {i + 1}. {name} — {count}" for i, (name, count) in enumerate(items))
+    return "\n".join(
+        f"  {i + 1}. {name} — {count}" for i, (name, count) in enumerate(items)
+    )
 
 
 async def _BuildUsersStatsText(lang: str) -> str:
@@ -262,7 +268,10 @@ async def _BuildMatchingStatsText(lang: str) -> str:
     ctx = await GetUserContextService()
     verified_ids = await ctx.GetVerifiedTgUsersChatId()
     eligible_ids = await ctx.GetTgUsersOnCondition(
-        condition=TgUser.verified & ~TgUser.blocked & ~TgUser.matching_paused & TgUser.nes_id.isnot(None),
+        condition=TgUser.verified
+        & ~TgUser.blocked
+        & ~TgUser.matching_paused
+        & TgUser.nes_id.isnot(None),
         column=TgUser.chat_id,
     )
 
@@ -288,43 +297,86 @@ async def _ExportTgUser(chat_id: int) -> None:
     svc = await GetAnalyticsService()
     users = await svc.GetAllTgUsers()
     headers = [
-        "chat_id", "nes_id", "nes_email", "username", "phone_number",
-        "language", "about", "verified", "blocked", "created_at", "updated_at",
+        "chat_id",
+        "nes_id",
+        "nes_email",
+        "username",
+        "phone_number",
+        "language",
+        "about",
+        "verified",
+        "blocked",
+        "created_at",
+        "updated_at",
     ]
     rows: list[list[str]] = [
         [
-            str(u.chat_id), str(u.nes_id or ""), str(u.nes_email or ""),
-            str(u.username or ""), str(u.phone_number or ""), str(u.language or ""),
-            str(u.about or ""), str(u.verified), str(u.blocked),
-            str(u.created_at), str(u.updated_at),
+            str(u.chat_id),
+            str(u.nes_id or ""),
+            str(u.nes_email or ""),
+            str(u.username or ""),
+            str(u.phone_number or ""),
+            str(u.language or ""),
+            str(u.about or ""),
+            str(u.verified),
+            str(u.blocked),
+            str(u.created_at),
+            str(u.updated_at),
         ]
         for u in users
     ]
-    await SendTemporaryXlsxFile(chat_id=chat_id, sheets=[("tg_user", headers, rows)], filename="tg_user")
+    await SendTemporaryXlsxFile(
+        chat_id=chat_id, sheets=[("tg_user", headers, rows)], filename="tg_user"
+    )
 
 
 async def _ExportNesUser(chat_id: int) -> None:
     svc = await GetAnalyticsService()
     users = await svc.GetAllNesUsers()
     headers = [
-        "nes_id", "name", "city", "region", "country", "program", "class_name",
-        "hobbies", "industry_expertise", "country_expertise", "professional_expertise",
-        "main_work", "additional_work", "pre_nes_education", "post_nes_education",
-        "created_at", "updated_at",
+        "nes_id",
+        "name",
+        "city",
+        "region",
+        "country",
+        "program",
+        "class_name",
+        "hobbies",
+        "industry_expertise",
+        "country_expertise",
+        "professional_expertise",
+        "main_work",
+        "additional_work",
+        "pre_nes_education",
+        "post_nes_education",
+        "created_at",
+        "updated_at",
     ]
     rows: list[list[str]] = [
         [
-            str(u.nes_id), str(u.name or ""), str(u.city or ""), str(u.region or ""),
-            str(u.country or ""), str(u.program or ""), str(u.class_name or ""),
-            str(u.hobbies or ""), str(u.industry_expertise or ""),
-            str(u.country_expertise or ""), str(u.professional_expertise or ""),
-            str(u.main_work or ""), str(u.additional_work or ""),
-            str(u.pre_nes_education or ""), str(u.post_nes_education or ""),
-            str(u.created_at), str(u.updated_at),
+            str(u.nes_id),
+            str(u.name or ""),
+            str(u.city or ""),
+            str(u.region or ""),
+            str(u.country or ""),
+            str(u.program or ""),
+            str(u.class_name or ""),
+            str(u.hobbies or ""),
+            str(u.industry_expertise or ""),
+            str(u.country_expertise or ""),
+            str(u.professional_expertise or ""),
+            str(u.main_work or ""),
+            str(u.additional_work or ""),
+            str(u.pre_nes_education or ""),
+            str(u.post_nes_education or ""),
+            str(u.created_at),
+            str(u.updated_at),
         ]
         for u in users
     ]
-    await SendTemporaryXlsxFile(chat_id=chat_id, sheets=[("nes_user", headers, rows)], filename="nes_user")
+    await SendTemporaryXlsxFile(
+        chat_id=chat_id, sheets=[("nes_user", headers, rows)], filename="nes_user"
+    )
 
 
 async def _ExportMessage(chat_id: int) -> None:
@@ -335,7 +387,9 @@ async def _ExportMessage(chat_id: int) -> None:
         [str(m.message_id), str(m.chat_id), m.side.value, m.text, str(m.time)]
         for m in messages
     ]
-    await SendTemporaryXlsxFile(chat_id=chat_id, sheets=[("message", headers, rows)], filename="message")
+    await SendTemporaryXlsxFile(
+        chat_id=chat_id, sheets=[("message", headers, rows)], filename="message"
+    )
 
 
 # --- Handlers ---

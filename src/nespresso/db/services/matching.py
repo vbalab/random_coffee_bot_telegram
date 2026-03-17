@@ -1,4 +1,3 @@
-from nespresso.db.models.match import MatchAssignment, MatchRound
 from nespresso.db.repositories.match import MatchRepository
 
 

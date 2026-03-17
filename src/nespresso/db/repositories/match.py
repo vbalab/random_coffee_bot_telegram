@@ -18,7 +18,9 @@ class MatchRepository:
             session.add(round_)
             await session.commit()
             await session.refresh(round_)
-            logging.info(f"MatchRound(id={round_.id}) created by chat_id={triggered_by}")
+            logging.info(
+                f"MatchRound(id={round_.id}) created by chat_id={triggered_by}"
+            )
             return round_
 
     async def GetLastRound(self) -> MatchRound | None:
