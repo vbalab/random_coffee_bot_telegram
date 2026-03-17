@@ -11,6 +11,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from nespresso.bot.handlers.admin.commands.back import BackToAdminPanelCallbackData
 from nespresso.bot.lib.chat.block import BlockUser, CheckIfBlocked, UnblockUser
+from nespresso.core.configs.admin_store import IsAdmin
 from nespresso.bot.lib.hub_state import HUB_MESSAGES
 from nespresso.bot.lib.message.i18n import GetUserLanguage, t
 from nespresso.bot.lib.message.io import ContextIO, SendMessage
@@ -169,6 +170,16 @@ async def BlockingPanelBlockUsername(message: types.Message, state: FSMContext) 
             text=t(lang, "admin.blocking_not_found", username=username),
             context=ContextIO.UserFailed,
         )
+        return
+
+    if await IsAdmin(chat_id):
+        await state.clear()
+        await SendMessage(
+            chat_id=message.chat.id,
+            text=t(lang, "admin.blocking_is_admin", username=username),
+            context=ContextIO.UserFailed,
+        )
+        await ShowBlockingPanel(message.chat.id)
         return
 
     blocked = await CheckIfBlocked(chat_id)
