@@ -14,6 +14,7 @@
   "common.thanks": "✅ Спасибо!",
   "start.enter_email": "Пожалуйста, введите ваш NES alumni e-mail, чтобы продолжить",
   "start.email_invalid": "В e-mail должно быть '@nes.ru'",
+  "start.email_taken": "❌ Этот email уже зарегистрирован в другом аккаунте.",
   "start.sending_code": "Отправляем код.\nПожалуйста, подождите",
   "start.sent_code": "Мы отправили вам код.\nПожалуйста, введите его сюда",
   "start.code_invalid": "Код неверный.\nПопробуйте еще раз",
