@@ -237,7 +237,7 @@ async def CommandStartEmailGet(message: types.Message, state: FSMContext) -> Non
         value=email,
     )
 
-    await SendMessage(
+    wait_message = await SendMessage(
         chat_id=chat_id,
         text=t(lang, "start.sending_code"),
     )
@@ -251,6 +251,15 @@ async def CommandStartEmailGet(message: types.Message, state: FSMContext) -> Non
         chat_id=chat_id,
         text=t(lang, "start.sent_code"),
     )
+
+    if wait_message is not None:
+        try:
+            await wait_message.delete()
+        except Exception:
+            logging.debug(
+                f"Failed to delete wait message for chat_id={chat_id}",
+                exc_info=True,
+            )
 
     await state.set_data({"code": code})
     await state.set_state(StartStates.EmailConfirm)
