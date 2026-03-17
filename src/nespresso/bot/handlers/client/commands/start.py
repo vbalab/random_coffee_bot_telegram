@@ -231,6 +231,18 @@ async def CommandStartEmailGet(message: types.Message, state: FSMContext) -> Non
         return
 
     ctx = await GetUserContextService()
+
+    existing_chat_id = await ctx.GetTgChatIdBy(nes_email=email)
+    if existing_chat_id is not None and existing_chat_id != chat_id:
+        is_verified = await ctx.GetTgUser(existing_chat_id, TgUser.verified)
+        if is_verified:
+            await SendMessage(
+                chat_id=chat_id,
+                text=t(lang, "start.email_taken"),
+                context=ContextIO.UserFailed,
+            )
+            return
+
     await ctx.UpdateTgUser(
         chat_id=chat_id,
         column=TgUser.nes_email,
