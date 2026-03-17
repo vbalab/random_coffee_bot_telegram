@@ -11,10 +11,12 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from nespresso.bot.handlers.admin.commands.back import BackToAdminPanelCallbackData
 from nespresso.bot.lib.chat.block import BlockUser, CheckIfBlocked, UnblockUser
+from nespresso.bot.lib.chat.username import GetTgUsername
 from nespresso.bot.lib.hub_state import HUB_MESSAGES
 from nespresso.bot.lib.message.i18n import GetUserLanguage, t
-from nespresso.bot.lib.message.io import ContextIO, SendMessage
+from nespresso.bot.lib.message.io import ContextIO, PersonalMsg, SendMessage, SendMessagesToGroup
 from nespresso.bot.lifecycle.creator import bot
+from nespresso.core.configs.admin_store import GetAdminIds, IsAdmin
 from nespresso.db.models.tg_user import TgUser
 from nespresso.db.services.user_context import GetUserContextService
 
@@ -99,6 +101,31 @@ async def BuildBlockingPanelText(lang: str) -> str:
     return t(lang, "admin.blocking_header", blocked_section=blocked_section)
 
 
+async def _NotifyAdminsAboutBlocking(actor_chat_id: int, key: str, **kwargs: str) -> None:
+    """Send a blocking-related notification to all admins except the actor."""
+    other_admins = [aid for aid in await GetAdminIds() if aid != actor_chat_id]
+    if not other_admins:
+        return
+
+    actor_name = str(actor_chat_id)
+    try:
+        username = await GetTgUsername(actor_chat_id)
+        if username:
+            actor_name = f"@{username}"
+    except Exception:
+        logging.debug(
+            f"Failed to get username for actor chat_id={actor_chat_id}", exc_info=True
+        )
+
+    messages: list[PersonalMsg] = []
+    for admin_id in other_admins:
+        lang = await GetUserLanguage(admin_id)
+        text = t(lang, key, actor=actor_name, **kwargs)
+        messages.append(PersonalMsg(chat_id=admin_id, text=text))
+
+    await SendMessagesToGroup(messages)
+
+
 async def ShowBlockingPanel(chat_id: int) -> None:
     """Edit the hub message to display the blocking sub-panel."""
     lang = await GetUserLanguage(chat_id)
@@ -171,6 +198,19 @@ async def BlockingPanelBlockUsername(message: types.Message, state: FSMContext) 
         )
         return
 
+    if await IsAdmin(chat_id):
+        await state.clear()
+        await SendMessage(
+            chat_id=message.chat.id,
+            text=t(lang, "admin.blocking_is_admin", username=username),
+            context=ContextIO.UserFailed,
+        )
+        await _NotifyAdminsAboutBlocking(
+            message.chat.id, "admin.blocking_notify_tried_admin", target=f"@{username}"
+        )
+        await ShowBlockingPanel(message.chat.id)
+        return
+
     blocked = await CheckIfBlocked(chat_id)
     await state.clear()
 
@@ -184,6 +224,9 @@ async def BlockingPanelBlockUsername(message: types.Message, state: FSMContext) 
         await SendMessage(
             chat_id=message.chat.id,
             text=t(lang, "admin.blocking_blocked", username=username),
+        )
+        await _NotifyAdminsAboutBlocking(
+            message.chat.id, "admin.blocking_notify_blocked", target=f"@{username}"
         )
 
     await ShowBlockingPanel(message.chat.id)
@@ -243,6 +286,9 @@ async def BlockingPanelUnblockUsername(
         await SendMessage(
             chat_id=message.chat.id,
             text=t(lang, "admin.blocking_unblocked", username=username),
+        )
+        await _NotifyAdminsAboutBlocking(
+            message.chat.id, "admin.blocking_notify_unblocked", target=f"@{username}"
         )
 
     await ShowBlockingPanel(message.chat.id)
