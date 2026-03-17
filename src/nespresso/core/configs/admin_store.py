@@ -41,4 +41,7 @@ async def RemoveAdmin(chat_id: int) -> bool:
     if not current:
         return False
     await ctx.UpdateTgUser(chat_id, TgUser.is_admin, False)
+    nes_email = await ctx.GetTgUser(chat_id, TgUser.nes_email)
+    if not nes_email:
+        await ctx.UpdateTgUser(chat_id, TgUser.verified, False)
     return True
