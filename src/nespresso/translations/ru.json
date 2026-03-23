@@ -26,6 +26,8 @@
   "start.about_prompt": "Хотите написать краткое описание о себе? Это поможет другим выпускникам познакомиться с вами.",
   "start.about_write_now": "✏️ Написать сейчас",
   "start.about_write_later": "⏭ Написать позже",
+  "start.email_not_in_nes": "❌ Ваш email подтверждён, но мы не нашли его в базе выпускников NES.\nПожалуйста, проверьте и введите ваш NES email ещё раз.",
+  "start.email_not_in_nes_admin": "⚠️ Пользователь {username} (ID: {chat_id}) подтвердил email `{email}`, но он не найден в системе NES.",
 
   "hub.welcome": "👋 Добро пожаловать!",
   "hub.find_person": "🔍 Найти человека",

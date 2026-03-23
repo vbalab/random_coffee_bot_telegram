@@ -15,7 +15,9 @@ from aiogram.types import (
     ReplyKeyboardRemove,
 )
 
+from nespresso.api.request import GetNesUserFromMyNES
 from nespresso.bot.handlers.client.email.verification import CreateCode
+from nespresso.bot.lib.chat.username import GetTgUsername
 from nespresso.bot.lib.message.checks import CheckVerified
 from nespresso.bot.lib.message.i18n import (
     GetUserLanguage,
@@ -24,6 +26,7 @@ from nespresso.bot.lib.message.i18n import (
     t,
 )
 from nespresso.bot.lib.message.io import ContextIO, SendDocument, SendMessage
+from nespresso.core.configs.admin_store import GetAdminIds
 from nespresso.core.configs.paths import PATH_TERMS_OF_USE
 from nespresso.db.models.tg_user import TgUser
 from nespresso.db.services.user_context import GetUserContextService
@@ -295,6 +298,39 @@ async def CommandStartEmailConfirm(message: types.Message, state: FSMContext) ->
             context=ContextIO.UserFailed,
         )
         return
+
+    ctx = await GetUserContextService()
+    nes_email = await ctx.GetTgUser(chat_id, TgUser.nes_email)
+
+    try:
+        nes_user = await GetNesUserFromMyNES(nes_email)
+    except Exception:
+        logging.exception(
+            f"GetNesUserFromMyNES raised an exception for chat_id={chat_id}, email={nes_email}"
+        )
+        nes_user = None
+
+    if nes_user is None:
+        username = await GetTgUsername(chat_id) or str(chat_id)
+        admin_text = t(
+            "en",
+            "start.email_not_in_nes_admin",
+            username=username,
+            chat_id=chat_id,
+            email=nes_email,
+        )
+        for admin_id in await GetAdminIds():
+            await SendMessage(chat_id=admin_id, text=admin_text)
+
+        await SendMessage(
+            chat_id=chat_id,
+            text=t(lang, "start.email_not_in_nes"),
+            context=ContextIO.UserFailed,
+        )
+        await state.set_state(StartStates.EmailGet)
+        return
+
+    await ctx.UpdateTgUser(chat_id=chat_id, column=TgUser.nes_id, value=nes_user.nes_id)
 
     await SendMessage(
         chat_id=chat_id,
