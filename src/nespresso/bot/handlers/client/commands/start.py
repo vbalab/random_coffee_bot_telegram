@@ -317,7 +317,7 @@ async def CommandStartEmailConfirm(message: types.Message, state: FSMContext) ->
             "start.email_not_in_nes_admin",
             username=username,
             chat_id=chat_id,
-            email=nes_email,
+            email=nes_email or "",
         )
         for admin_id in await GetAdminIds():
             await SendMessage(chat_id=admin_id, text=admin_text)
