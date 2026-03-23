@@ -17,9 +17,9 @@ def _NesUserPydanticToSQLAlchemy(instance: NesUserIn) -> NesUser:
     return NesUser(**raw)
 
 
-async def _FetchNesUserData(nes_id: int) -> dict[str, Any]:
+async def _FetchNesUserData(nes_email: int) -> dict[str, Any]:
     base_url = settings.NES_API_BASE_URL.rstrip("/")
-    url = f"{base_url}/user/{nes_id}"
+    url = f"{base_url}/user/byEmail/{nes_email}"
 
     async with httpx.AsyncClient() as client:
         response = await client.get(url, headers={"accept": "application/json"})
@@ -28,30 +28,30 @@ async def _FetchNesUserData(nes_id: int) -> dict[str, Any]:
     except httpx.HTTPStatusError:
         logging.exception(
             "Failed to fetch NES user data.",
-            extra={"nes_id": nes_id, "status_code": response.status_code},
+            extra={"nes_email": nes_email, "status_code": response.status_code},
         )
         raise
 
     return response.json()
 
 
-async def GetNesUserFromMyNES(nes_id: int) -> NesUserIn | None:
-    data = await _FetchNesUserData(nes_id)
+async def GetNesUserFromMyNES(nes_email: int) -> NesUserIn | None:
+    data = await _FetchNesUserData(nes_email)
 
     try:
         nes_user = NesUserIn.model_validate(data)
     except ValidationError:
         logging.exception(
             "Failed to parse NES user data.",
-            extra={"nes_id": nes_id, "payload": data},
+            extra={"nes_email": nes_email, "payload": data},
         )
         return None
 
     alchemy_nes_user = _NesUserPydanticToSQLAlchemy(nes_user)
 
     logging.info(
-        f"MyNES info for `nes_id={nes_id}` synced from API.",
-        extra={"nes_id": nes_user.nes_id},
+        f"MyNES info for `nes_email={nes_email}` synced from API.",
+        extra={"nes_email": nes_email, "nes_id": nes_user.nes_id},
     )
 
     ctx = await GetUserContextService()

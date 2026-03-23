@@ -14,7 +14,12 @@ from nespresso.bot.lib.chat.block import BlockUser, CheckIfBlocked, UnblockUser
 from nespresso.bot.lib.chat.username import GetTgUsername
 from nespresso.bot.lib.hub_state import HUB_MESSAGES
 from nespresso.bot.lib.message.i18n import GetUserLanguage, t
-from nespresso.bot.lib.message.io import ContextIO, PersonalMsg, SendMessage, SendMessagesToGroup
+from nespresso.bot.lib.message.io import (
+    ContextIO,
+    PersonalMsg,
+    SendMessage,
+    SendMessagesToGroup,
+)
 from nespresso.bot.lifecycle.creator import bot
 from nespresso.core.configs.admin_store import GetAdminIds, IsAdmin
 from nespresso.db.models.tg_user import TgUser
@@ -101,7 +106,9 @@ async def BuildBlockingPanelText(lang: str) -> str:
     return t(lang, "admin.blocking_header", blocked_section=blocked_section)
 
 
-async def _NotifyAdminsAboutBlocking(actor_chat_id: int, key: str, **kwargs: str) -> None:
+async def _NotifyAdminsAboutBlocking(
+    actor_chat_id: int, key: str, **kwargs: str
+) -> None:
     """Send a blocking-related notification to all admins except the actor."""
     other_admins = [aid for aid in await GetAdminIds() if aid != actor_chat_id]
     if not other_admins:
