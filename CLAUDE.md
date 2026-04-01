@@ -37,7 +37,9 @@ src/nespresso/
 │   ├── configs/
 │   │   ├── settings.py      # Pydantic settings (all env vars)
 │   │   ├── paths.py         # Filesystem paths + EnsurePaths()
-│   │   └── admin_store.py   # DB-backed admin list (GetAdminIds, IsAdmin, AddAdmin, RemoveAdmin)
+│   │   ├── admin_ids.py     # DEFAULT_ADMIN_IDS list (hardcoded bootstrap admins)
+│   │   ├── admin_store.py   # DB-backed admin list (GetAdminIds, IsAdmin, AddAdmin, RemoveAdmin)
+│   │   └── title_store.py   # Custom welcome title per language (GetTitle, SetTitle, GetBothTitles)
 │   └── logs/                # Logging setup (color JSON, bot.log/api.log)
 │       ├── bot.py           # Bot logger setup
 │       ├── api.py           # API logger setup
@@ -70,7 +72,7 @@ src/nespresso/
 ├── bot/                     # Telegram bot
 │   ├── lifecycle/
 │   │   ├── creator.py       # Bot + Dispatcher + BOT_ID singletons
-│   │   └── menu.py          # SetMenu() — register /start, /cancel commands
+│   │   └── menu.py          # SetMenu() — register /start, /cancel, /help commands
 │   ├── handlers/
 │   │   ├── client/
 │   │   │   ├── commands/
@@ -90,6 +92,7 @@ src/nespresso/
 │   │   │   │   ├── admins.py    # Admin list management sub-panel (notifies other admins on changes)
 │   │   │   │   ├── matching.py  # Run matching + send feedback request sub-panel
 │   │   │   │   ├── statistics.py # Statistics sub-panel + DB export
+│   │   │   │   ├── title.py     # Custom welcome title editor sub-panel (per-language)
 │   │   │   │   ├── send.py      # (stub)
 │   │   │   │   ├── senda.py     # (stub)
 │   │   │   │   ├── messages.py  # (stub)
@@ -186,7 +189,9 @@ recsys/profile   ←── recsys/matching/assign.py
 core/configs/admin_store ←── bot/lib (filters, notifications)
                          ←── db/session (seeding on startup)
 
-core/configs ←── everywhere (settings, paths, admin_store)
+core/configs/title_store ←── bot/handlers/admin/commands/title.py
+
+core/configs ←── everywhere (settings, paths, admin_store, title_store)
 ```
 
 ### Key Dependency Rules
@@ -229,7 +234,8 @@ core/configs ←── everywhere (settings, paths, admin_store)
 | `city/region/country` | String | |
 | `program/class_name` | String | NES study program |
 | `hobbies/industry_expertise/country_expertise/professional_expertise` | JSON array | Skills/interests |
-| `main_work/additional_work` | JSON object | Employment |
+| `main_work` | JSON object | Primary employment |
+| `additional_work` | JSON array of objects | Additional employment history |
 | `pre_nes_education/post_nes_education` | JSON array | Education history |
 
 **Key methods on `NesUser`:**
@@ -383,7 +389,7 @@ Requires `TgUser.is_admin = True` in DB (checked via `IsAdmin(chat_id)` from `ad
 
 Accessed via Hub → "Admin panel" button (edits hub message in-place).
 
-Actions: Download logs | View user messages | Send DM | Broadcast | Block/Unblock | Run Matching / Send Feedback | Manage admins | Statistics
+Actions: Download logs | View user messages | Send DM | Broadcast | Block/Unblock | Run Matching / Send Feedback | Manage admins | Statistics | Edit Welcome Title
 
 **Admin change notifications:** When an admin adds or removes another admin, all other admins receive a notification with who performed the action and who was affected.
 
@@ -406,6 +412,21 @@ Sub-panel buttons (each sends a new separate message with stats):
        ├─ 🎓 nes_user → sends nes_user.xlsx
        └─ 💬 message  → sends message.xlsx
 ```
+
+### 10. Welcome Title Editor (admin sub-panel)
+
+```
+Admin Panel → ✏️ Edit Title → edits hub message to Title sub-panel
+  └─ Shows current EN and RU titles
+     Buttons:
+       ├─ "Edit EN" → state: TitlePanelStates.EditEN → user types text → SetTitle("en", text)
+       │              → state cleared → hub edited back to Title sub-panel
+       ├─ "Edit RU" → state: TitlePanelStates.EditRU → user types text → SetTitle("ru", text)
+       │              → state cleared → hub edited back to Title sub-panel
+       └─ "⬅️ Back" → edits hub message back to AdminPanel
+```
+
+Custom titles are persisted to `data/title/title.json` via `title_store.py` and take effect immediately for all new `/start` greetings. Falls back to built-in defaults (`"👋 Welcome!"` / `"👋 Добро пожаловать!"`) if the file is missing or a language key is absent.
 
 ---
 
@@ -480,7 +501,7 @@ added   = await AddAdmin(chat_id)  # bool — False if already admin
 removed = await RemoveAdmin(chat_id)  # bool — False if not admin
 ```
 
-Initial admin IDs are seeded by `EnsureDB()` from `data/admins/admins.json` (if it exists) or from `_DEFAULT_ADMIN_IDS = [749410326]`.
+Initial admin IDs are seeded by `EnsureDB()` from `data/admins/admins.json` (if it exists) or from `DEFAULT_ADMIN_IDS = [749410326, 705983233]` (defined in `core/configs/admin_ids.py`). Hardcoded admins cannot be removed via `RemoveAdmin()`.
 
 ### Repository Pattern
 
@@ -616,6 +637,7 @@ data/
   logs/bot/bot.log
   logs/api/api.log
   temp/
+  title/title.json           ← custom welcome title store (created on first SetTitle() call)
   recsys/embedding/model/   ← HuggingFace model cache
   recsys/opensearch/data/
 ```
@@ -653,7 +675,7 @@ main():
 6. dp.start_polling(bot, drop_pending_updates=True)
 
 OnStartup() [registered as dp.startup hook]:
-1. SetMenu()                  # Register /start, /cancel bot commands
+1. SetMenu()                  # Register /start, /cancel, /help bot commands
 2. RegisterHandlerCancel(dp)  # /cancel handler
 3. RegisterAdminHandlers(dp)  # Admin panel routers
 4. RegisterClientHandlers(dp) # Hub, start, find, about, settings routers
@@ -769,6 +791,7 @@ The handlers for these are in `hub.py` (HubBack) and `admin.py` (PanelBack).
 - **DB export** (`⬇️ Download DB`) opens a sub-panel with one button per table; each writes a temporary single-sheet `.xlsx` to `data/temp/` via `openpyxl`, sends it, then deletes it. The `message` table can be large — export time scales with row count.
 - **User bio (about) indexing**: when a user saves their bio, `UpsertAboutOpenSearch(nes_id, about_text)` is called — it extracts keywords via KeyBERT, enriches the text, and upserts to the `cv` side of the OpenSearch document.
 - **Help requests**: users can request help via Settings → Help → "Ask for help"; this silently notifies all admins with the user's `@username` and `chat_id`.
+- **Welcome title customization**: admins can set per-language greeting titles via Admin Panel → Title editor. Titles persist in `data/title/title.json`; the file is created on first write and is not version-controlled.
 
 ---
 
@@ -798,3 +821,5 @@ The handlers for these are in `hub.py` (HubBack) and `admin.py` (PanelBack).
 | `EnsureSearchPipeline` | Creates OpenSearch normalization pipeline for hybrid BM25+KNN search |
 | `PersonalMsg` | Dataclass `(chat_id, text)` used with `SendMessagesToGroup` for bulk sends |
 | `DocSide` | Enum: `mynes` or `cv` — which side of the OpenSearch document to upsert |
+| `TitleStore` | JSON file (`data/title/title.json`) holding custom per-language welcome titles; managed via `core/configs/title_store.py` |
+| `DEFAULT_ADMIN_IDS` | Hardcoded bootstrap admin chat IDs in `core/configs/admin_ids.py`; these cannot be removed via `RemoveAdmin()` |
