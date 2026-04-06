@@ -47,22 +47,22 @@ async def GetNesUserFromMyNES(nes_email: int) -> NesUserIn | None:
         )
         return None
 
-    alchemy_nes_user = _NesUserPydanticToSQLAlchemy(nes_user)
-
     logging.info(
         f"MyNES info for `nes_email={nes_email}` synced from API.",
         extra={"nes_email": nes_email, "nes_id": nes_user.nes_id},
     )
 
-    ctx = await GetUserContextService()
-    await ctx.UpsertNesUser(alchemy_nes_user)
+    if nes_user.alumni:
+        alchemy_nes_user = _NesUserPydanticToSQLAlchemy(nes_user)
+        ctx = await GetUserContextService()
+        await ctx.UpsertNesUser(alchemy_nes_user)
 
-    text = alchemy_nes_user.FullDescription()
-    await UpsertTextOpenSearch(
-        nes_id=nes_user.nes_id,
-        side=DocSide.mynes,
-        text=text,
-    )
+        full_text = alchemy_nes_user.FullDescription()
+        await UpsertTextOpenSearch(
+            nes_id=nes_user.nes_id,
+            side=DocSide.mynes,
+            text=full_text,
+        )
 
     return nes_user
 

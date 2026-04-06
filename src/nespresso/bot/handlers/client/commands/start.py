@@ -330,6 +330,15 @@ async def CommandStartEmailConfirm(message: types.Message, state: FSMContext) ->
         await state.set_state(StartStates.EmailGet)
         return
 
+    if not nes_user.alumni:
+        await SendMessage(
+            chat_id=chat_id,
+            text=t(lang, "start.not_alumni"),
+            context=ContextIO.UserFailed,
+        )
+        await state.set_state(StartStates.EmailGet)
+        return
+
     await ctx.UpdateTgUser(chat_id=chat_id, column=TgUser.nes_id, value=nes_user.nes_id)
 
     await SendMessage(

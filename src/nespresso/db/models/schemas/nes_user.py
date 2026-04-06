@@ -46,6 +46,7 @@ class NesUserIn(NesUserOut):
     # NES alumni info
     program: str | None = Field(default=None, description="Программа")
     class_name: str | None = Field(default=None, description="Класс")
+    alumni: bool | None = Field(default=None, description="Alumni status")
 
     # Hobbies and expertise
     hobbies: list[str] | None = Field(default=None, description="Хобби")
