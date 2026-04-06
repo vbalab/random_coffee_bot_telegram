@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 from datetime import datetime
 
-from sqlalchemy import JSON, BigInteger, DateTime, String, text
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, String, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from nespresso.db.base import Base
@@ -21,6 +21,7 @@ class NesUser(Base):
     # NES alumni info
     program: Mapped[str | None] = mapped_column(String, nullable=True)
     class_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    alumni: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     # Hobbies and expertise
     hobbies: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)

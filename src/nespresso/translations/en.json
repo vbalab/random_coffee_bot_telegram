@@ -28,6 +28,7 @@
   "start.about_write_later": "⏭ Write about later",
   "start.email_not_in_nes": "❌ Your email was confirmed, but we couldn't find it in the NES alumni database.\nPlease double-check and enter your NES email again.",
   "start.email_not_in_nes_admin": "⚠️ User {username} (ID: {chat_id}) confirmed email `{email}` but it was not found in the NES system.",
+  "start.not_alumni": "❌ Your email was found, but you are not registered as a NES alumni yet.\nPlease contact NES or try again later.",
 
   "hub.welcome": "👋 Welcome!",
   "hub.find_person": "🔍 Find Person",

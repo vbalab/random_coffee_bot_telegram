@@ -44,6 +44,9 @@ async def EnsureDB() -> None:
                 "ALTER TABLE tg_user ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE"
             )
         )
+        await conn.execute(
+            text("ALTER TABLE nes_user ADD COLUMN IF NOT EXISTS alumni BOOLEAN")
+        )
 
         # One-time migration: seed admin IDs from admins.json if it exists
         _admins_json = Path("data/admins/admins.json")
