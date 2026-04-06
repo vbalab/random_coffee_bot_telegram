@@ -16,7 +16,7 @@ from aiogram.types import (
 )
 
 from nespresso.api.request import GetNesUserFromMyNES
-from nespresso.bot.handlers.client.email.verification import CreateCode
+from nespresso.bot.handlers.client.email.verification import CreateCode, SendCode
 from nespresso.bot.lib.chat.username import GetTgUsername
 from nespresso.bot.lib.message.checks import CheckVerified
 from nespresso.bot.lib.message.i18n import (
@@ -258,9 +258,7 @@ async def CommandStartEmailGet(message: types.Message, state: FSMContext) -> Non
     )
 
     code = CreateCode()
-    logging.info(f"Sending code '{code}' to '{email}'")
-    # TODO: uncomment
-    # await SendCode(email=email, code=code)
+    await SendCode(email=email, code=code)
 
     await SendMessage(
         chat_id=chat_id,
