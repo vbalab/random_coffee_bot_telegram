@@ -103,11 +103,32 @@ async def HubFindCallback(
     assert isinstance(callback_query.message, types.Message)
     await callback_query.answer()
 
-    lang = await GetUserLanguage(callback_query.from_user.id)
-    await SendMessage(
+    chat_id = callback_query.from_user.id
+    lang = await GetUserLanguage(chat_id)
+
+    # Delete the hub message so it doesn't remain clickable during the search flow
+    try:
+        await callback_query.message.delete()
+    except Exception:
+        logging.warning(
+            f"Failed to delete hub message for chat_id={chat_id} during Find",
+            exc_info=True,
+        )
+    HUB_MESSAGES.pop(chat_id, None)
+
+    msg = await SendMessage(
         chat_id=callback_query.message.chat.id,
         text=t(lang, "find.enter_query"),
     )
+
+    # Track the search prompt so SendHub can clean it up when the user returns to hub
+    if msg is not None:
+        HUB_MESSAGES[chat_id] = msg.message_id
+        ctx = await GetUserContextService()
+        await ctx.UpdateTgUser(
+            chat_id=chat_id, column=TgUser.panel_message_id, value=msg.message_id
+        )
+
     await state.set_state(FindStates.Text)
 
 
