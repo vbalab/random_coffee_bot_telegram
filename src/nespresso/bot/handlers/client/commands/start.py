@@ -1,4 +1,5 @@
 import logging
+import time
 from enum import Enum
 
 from aiogram import F, Router, types
@@ -217,12 +218,27 @@ async def CommandStartGetPhoneNumber(message: types.Message, state: FSMContext) 
     await state.set_state(StartStates.EmailGet)
 
 
+_EMAIL_COOLDOWN_SECONDS = 10 * 60
+
+
 @router.message(StateFilter(StartStates.EmailGet), F.content_type == "text")
 async def CommandStartEmailGet(message: types.Message, state: FSMContext) -> None:
     assert message.text is not None
 
     chat_id = message.chat.id
     lang = await GetUserLanguage(chat_id)
+
+    data = await state.get_data()
+    cooldown_until = data.get("cooldown_until")
+    if cooldown_until is not None and time.time() < cooldown_until:
+        remaining = int((cooldown_until - time.time()) // 60) + 1
+        await SendMessage(
+            chat_id=chat_id,
+            text=t(lang, "start.email_cooldown", minutes=remaining),
+            context=ContextIO.UserFailed,
+        )
+        return
+
     email = message.text.replace(" ", "")
 
     if "@nes.ru" not in email:
@@ -293,17 +309,15 @@ async def CommandStartEmailConfirm(message: types.Message, state: FSMContext) ->
         attempts = data.get("attempts", 0) + 1
 
         if attempts >= 3:
+            cooldown_until = time.time() + _EMAIL_COOLDOWN_SECONDS
+            remaining = _EMAIL_COOLDOWN_SECONDS // 60
             await SendMessage(
                 chat_id=chat_id,
-                text=t(lang, "start.code_attempts_exhausted"),
+                text=t(lang, "start.code_attempts_exhausted", minutes=remaining),
                 context=ContextIO.UserFailed,
             )
-            await state.clear()
             await state.set_state(StartStates.EmailGet)
-            await SendMessage(
-                chat_id=chat_id,
-                text=t(lang, "start.enter_email"),
-            )
+            await state.set_data({"cooldown_until": cooldown_until})
             return
 
         await state.update_data(attempts=attempts)
