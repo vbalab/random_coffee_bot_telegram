@@ -274,7 +274,7 @@ async def CommandStartEmailGet(message: types.Message, state: FSMContext) -> Non
                 exc_info=True,
             )
 
-    await state.set_data({"code": code})
+    await state.set_data({"code": code, "attempts": 0})
     await state.set_state(StartStates.EmailConfirm)
 
 
@@ -290,6 +290,23 @@ async def CommandStartEmailConfirm(message: types.Message, state: FSMContext) ->
     code_provided = message.text.replace(" ", "")
 
     if code_actual != code_provided:
+        attempts = data.get("attempts", 0) + 1
+
+        if attempts >= 3:
+            await SendMessage(
+                chat_id=chat_id,
+                text=t(lang, "start.code_attempts_exhausted"),
+                context=ContextIO.UserFailed,
+            )
+            await state.clear()
+            await state.set_state(StartStates.EmailGet)
+            await SendMessage(
+                chat_id=chat_id,
+                text=t(lang, "start.enter_email"),
+            )
+            return
+
+        await state.update_data(attempts=attempts)
         await SendMessage(
             chat_id=chat_id,
             text=t(lang, "start.code_invalid"),

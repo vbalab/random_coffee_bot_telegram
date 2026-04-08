@@ -18,6 +18,7 @@
   "start.sending_code": "Sending a code.\nPlease wait",
   "start.sent_code": "We've sent you a code.\nPlease provide it here",
   "start.code_invalid": "The code is incorrect.\nPlease try again",
+  "start.code_attempts_exhausted": "You've entered the wrong code 3 times.\nPlease re-enter your email and we'll send a new code.",
   "start.accept_button": "📄 Yes, I accept",
   "start.terms_caption": "Read the terms of the User Agreement and confirm your consent to the processing of personal information in the Terms of Service by clicking `📄 Yes, I accept`\n\nIf the button menu is hidden, click the 🎛 icon in the lower right corner",
   "start.terms_not_accepted": "❌ Please confirm the Terms of Service by clicking `📄 Yes, I accept`\nWithout it you are not allowed to use the service.\n\nIf the button menu is hidden, click the 🎛 icon in the lower right corner",
