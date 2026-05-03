@@ -48,6 +48,26 @@ async def EnsureDB() -> None:
             text("ALTER TABLE nes_user ADD COLUMN IF NOT EXISTS alumni BOOLEAN")
         )
 
+        # Migration: convert message PK from (message_id) to (chat_id, message_id)
+        # because Telegram message_id is unique only within a chat.
+        pk_columns = await conn.execute(
+            text(
+                "SELECT a.attname "
+                "FROM pg_index i "
+                "JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey) "
+                "WHERE i.indrelid = 'message'::regclass AND i.indisprimary"
+            )
+        )
+        existing_pk = {row[0] for row in pk_columns}
+        if existing_pk == {"message_id"}:
+            logging.info(
+                "Migrating message table PK from (message_id) to (chat_id, message_id)"
+            )
+            await conn.execute(text("ALTER TABLE message DROP CONSTRAINT message_pkey"))
+            await conn.execute(
+                text("ALTER TABLE message ADD PRIMARY KEY (chat_id, message_id)")
+            )
+
         # One-time migration: seed admin IDs from admins.json if it exists
         _admins_json = Path("data/admins/admins.json")
         admin_ids_to_seed = list(DEFAULT_ADMIN_IDS)

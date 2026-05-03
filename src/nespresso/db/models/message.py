@@ -21,9 +21,10 @@ class MessageSide(Enum):
 class Message(Base):
     __tablename__ = "message"
 
+    # Telegram message_id is unique only within a chat; need composite PK
+    chat_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, index=True)
     message_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
 
-    chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
     side: Mapped[MessageSide] = mapped_column(SqlEnum(MessageSide), nullable=False)
     text: Mapped[str] = mapped_column(String, nullable=False)
 

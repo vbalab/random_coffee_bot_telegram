@@ -304,8 +304,11 @@ async def _ExportTgUser(chat_id: int) -> None:
         "phone_number",
         "language",
         "about",
+        "panel_message_id",
         "verified",
         "blocked",
+        "matching_paused",
+        "is_admin",
         "created_at",
         "updated_at",
     ]
@@ -318,8 +321,11 @@ async def _ExportTgUser(chat_id: int) -> None:
             str(u.phone_number or ""),
             str(u.language or ""),
             str(u.about or ""),
+            str(u.panel_message_id or ""),
             str(u.verified),
             str(u.blocked),
+            str(u.matching_paused),
+            str(u.is_admin),
             str(u.created_at),
             str(u.updated_at),
         ]

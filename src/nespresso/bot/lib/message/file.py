@@ -22,9 +22,11 @@ async def SendTemporaryFileFromText(chat_id: int, text: str) -> None:
     with open(file_path, "w", encoding="utf-8") as file:
         file.write(text)
 
-    await SendDocument(chat_id=chat_id, document=types.FSInputFile(file_path))
-
-    os.remove(file_path)
+    try:
+        await SendDocument(chat_id=chat_id, document=types.FSInputFile(file_path))
+    finally:
+        if file_path.exists():
+            os.remove(file_path)
 
 
 async def SendTemporaryXlsxFile(
@@ -46,6 +48,8 @@ async def SendTemporaryXlsxFile(
 
     wb.save(file_path)
 
-    await SendDocument(chat_id=chat_id, document=types.FSInputFile(file_path))
-
-    os.remove(file_path)
+    try:
+        await SendDocument(chat_id=chat_id, document=types.FSInputFile(file_path))
+    finally:
+        if file_path.exists():
+            os.remove(file_path)

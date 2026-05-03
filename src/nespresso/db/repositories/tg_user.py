@@ -34,9 +34,11 @@ class TgUserRepository:
                 logging.info(f"TgUser(chat_id={chat_id}) created successfully.")
 
             except IntegrityError:
+                # Concurrent registration is expected — middleware can race
+                # with itself if multiple updates arrive simultaneously.
                 await session.rollback()
-                logging.error(
-                    f"TgUser(chat_id={chat_id}) already exists. Creation failed."
+                logging.debug(
+                    f"TgUser(chat_id={chat_id}) already exists; skipping create."
                 )
 
     # ----- Read -----
