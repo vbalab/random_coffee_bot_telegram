@@ -11,6 +11,7 @@ class NesUser(Base):
     __tablename__ = "nes_user"
 
     nes_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    nes_email: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
 
     # Personal info
     name: Mapped[str | None] = mapped_column(String, nullable=True)

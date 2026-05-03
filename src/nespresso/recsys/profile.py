@@ -46,6 +46,9 @@ class Profile:
             nes_self = nes_user.SelfDescription()
             nes_work = nes_user.WorkDescription()
 
+            if email is None and nes_user.nes_email:
+                email = nes_user.nes_email
+
         # TODO: add programm'year and format.
 
         return cls(

@@ -55,7 +55,7 @@
   "find.search_expired": "Search is expired",
   "find.no_more_pages": "No more pages",
 
-  "admin.panel_header": "⚙️ Admin Panel\n\n• 📋 Logs — download bot logs\n• 💬 Messages — view messages of a user\n• 📤 Send — send a message to a user\n• 📢 Send All — broadcast to all verified users\n• 🚫 Blocking — block or unblock a user\n• ⚙️ Matching — run matching or request feedback\n• 👥 Admins — manage admin list\n• 📊 Statistics — view platform analytics\n• 🏷️ Title — edit the hub panel header",
+  "admin.panel_header": "⚙️ Admin Panel\n\n• 📋 Logs — download bot logs\n• 💬 Messages — view messages of a user\n• 📤 Send — send a message to a user\n• 📢 Send All — broadcast to all verified users\n• 🚫 Blocking — block or unblock a user\n• ⚙️ Matching — run matching or request feedback\n• 👥 Admins — manage admin list\n• 📊 Statistics — view platform analytics\n• 🏷️ Title — edit the hub panel header\n• 🎓 MyNES — import alumni from MyNES",
   "admin.button_logs": "📋 Logs",
   "admin.button_messages": "💬 Messages",
   "admin.button_send": "📤 Send",
@@ -65,6 +65,7 @@
   "admin.button_admins": "👥 Admins",
   "admin.button_statistics": "📊 Statistics",
   "admin.button_title": "🏷️ Title",
+  "admin.button_mynes": "🎓 MyNES",
   "admin.button_back": "⬅️ Back",
   "admin.button_back_hub": "🏠 Hub",
 
@@ -84,6 +85,18 @@
   "admin.title_button_edit_ru": "✏️ Edit RU",
   "admin.title_enter_en": "Send the new English hub title:",
   "admin.title_enter_ru": "Send the new Russian hub title:",
+
+  "admin.mynes_header": "🎓 MyNES Import\n\nImport alumni profiles from MyNES so they appear in 'Find Person' search. Imported users are not included in matching rounds.",
+  "admin.mynes_button_upload": "📥 Upload Logins CSV",
+  "admin.mynes_enter_csv": "Send a `.csv` file with a single column named `login`.\n\nExample:\n```\nlogin\nnbelyakova\nnageev\neaunapu\n```",
+  "admin.mynes_csv_not_csv": "❌ Please send a `.csv` file as a document.",
+  "admin.mynes_csv_not_utf8": "❌ The file is not valid UTF-8. Please re-save it as UTF-8 and try again.",
+  "admin.mynes_csv_invalid": "❌ Could not parse the CSV file. Please check its format.",
+  "admin.mynes_csv_empty": "❌ The CSV file is empty.",
+  "admin.mynes_csv_bad_header": "❌ The CSV must have a single column named `login`.",
+  "admin.mynes_csv_no_logins": "❌ No logins found in the CSV file.",
+  "admin.mynes_processing": "⏳ Importing {count} login(s) from MyNES… please wait.",
+  "admin.mynes_done": "✅ MyNES import complete.\n\n• Total: {total}\n• Imported: {success}\n• Not alumni: {not_alumni}\n• Failed: {failed}",
 
   "admin.blocking_header": "🚫 Blocking Panel\n\nCurrently blocked users:\n{blocked_section}",
   "admin.blocking_no_blocked": "No blocked users.",

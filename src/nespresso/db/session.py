@@ -47,6 +47,14 @@ async def EnsureDB() -> None:
         await conn.execute(
             text("ALTER TABLE nes_user ADD COLUMN IF NOT EXISTS alumni BOOLEAN")
         )
+        await conn.execute(
+            text("ALTER TABLE nes_user ADD COLUMN IF NOT EXISTS nes_email VARCHAR")
+        )
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_nes_user_nes_email ON nes_user (nes_email)"
+            )
+        )
 
         # Migration: convert message PK from (message_id) to (chat_id, message_id)
         # because Telegram message_id is unique only within a chat.
