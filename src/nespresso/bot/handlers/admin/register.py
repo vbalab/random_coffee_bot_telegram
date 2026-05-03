@@ -7,6 +7,7 @@ from nespresso.bot.handlers.admin.commands import (
     logs,
     matching,
     messages,
+    mynes,
     send,
     senda,
     statistics,
@@ -27,6 +28,7 @@ def RegisterAdminHandlers(dp: Dispatcher) -> None:
         matching.router,
         statistics.router,
         title.router,
+        mynes.router,
     ]
     # Gate every admin handler so non-admins can't trigger admin actions
     # even if they reverse-engineer the callback data format.

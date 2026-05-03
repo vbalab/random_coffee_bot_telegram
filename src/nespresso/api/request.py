@@ -35,7 +35,10 @@ async def _FetchNesUserData(nes_email: str) -> dict[str, Any]:
     return response.json()
 
 
-async def GetNesUserFromMyNES(nes_email: str) -> NesUserIn | None:
+async def GetNesUserFromMyNES(
+    nes_email: str,
+    grant_data_sharing: bool = False,
+) -> NesUserIn | None:
     data = await _FetchNesUserData(nes_email)
 
     try:
@@ -54,6 +57,7 @@ async def GetNesUserFromMyNES(nes_email: str) -> NesUserIn | None:
 
     if nes_user.alumni:
         alchemy_nes_user = _NesUserPydanticToSQLAlchemy(nes_user)
+        alchemy_nes_user.nes_email = nes_email
         ctx = await GetUserContextService()
         await ctx.UpsertNesUser(alchemy_nes_user)
 
@@ -63,6 +67,9 @@ async def GetNesUserFromMyNES(nes_email: str) -> NesUserIn | None:
             side=DocSide.mynes,
             text=full_text,
         )
+
+        if grant_data_sharing:
+            await AllowDataSharingPermission(nes_user.nes_id)
 
     return nes_user
 

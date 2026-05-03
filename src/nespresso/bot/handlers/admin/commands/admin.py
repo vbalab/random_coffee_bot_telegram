@@ -18,6 +18,7 @@ from nespresso.bot.handlers.admin.commands.blocking import ShowBlockingPanel
 from nespresso.bot.handlers.admin.commands.matching import (
     ShowMatchingPanel,
 )
+from nespresso.bot.handlers.admin.commands.mynes import ShowMyNesPanel
 from nespresso.bot.handlers.admin.commands.statistics import ShowStatisticsPanel
 from nespresso.bot.handlers.admin.commands.title import ShowTitlePanel
 from nespresso.bot.lib.hub_state import HUB_MESSAGES
@@ -48,6 +49,7 @@ class AdminPanelAction(StrEnum):
     Admins = "admins"
     Statistics = "statistics"
     Title = "title"
+    MyNes = "mynes"
 
 
 class AdminPanelCallbackData(CallbackData, prefix="admin_panel"):
@@ -93,6 +95,7 @@ def AdminPanelKeyboard(lang: str) -> InlineKeyboardMarkup:
             ],
             [
                 Button(AdminPanelAction.Title, "admin.button_title"),
+                Button(AdminPanelAction.MyNes, "admin.button_mynes"),
             ],
             [back_hub_button],
         ]
@@ -392,3 +395,16 @@ async def PanelTitle(callback_query: types.CallbackQuery) -> None:
     assert isinstance(callback_query.message, types.Message)
     await callback_query.answer()
     await ShowTitlePanel(callback_query.message.chat.id)
+
+
+# --- MyNES ---
+
+
+@router.callback_query(
+    AdminPanelCallbackData.filter(F.action == AdminPanelAction.MyNes)
+)
+async def PanelMyNes(callback_query: types.CallbackQuery, state: FSMContext) -> None:
+    assert isinstance(callback_query.message, types.Message)
+    await callback_query.answer()
+    await state.clear()
+    await ShowMyNesPanel(callback_query.message.chat.id)
