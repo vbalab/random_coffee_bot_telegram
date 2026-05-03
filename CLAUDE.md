@@ -37,7 +37,10 @@ src/nespresso/
 │   ├── configs/
 │   │   ├── settings.py      # Pydantic settings (all env vars)
 │   │   ├── paths.py         # Filesystem paths + EnsurePaths()
-│   │   └── admin_store.py   # DB-backed admin list (GetAdminIds, IsAdmin, AddAdmin, RemoveAdmin)
+│   │   ├── admin_ids.py     # DEFAULT_ADMIN_IDS — built-in chat_ids that are
+│   │   │                    #   always admins (cannot be removed)
+│   │   ├── admin_store.py   # DB-backed admin list (GetAdminIds, IsAdmin, AddAdmin, RemoveAdmin)
+│   │   └── title_store.py   # JSON-backed hub title overrides (GetTitle, SetTitle, GetBothTitles)
 │   └── logs/                # Logging setup (color JSON, bot.log/api.log)
 │       ├── bot.py           # Bot logger setup
 │       ├── api.py           # API logger setup
@@ -90,6 +93,7 @@ src/nespresso/
 │   │   │   │   ├── admins.py    # Admin list management sub-panel (notifies other admins on changes)
 │   │   │   │   ├── matching.py  # Run matching + send feedback request sub-panel
 │   │   │   │   ├── statistics.py # Statistics sub-panel + DB export
+│   │   │   │   ├── title.py     # Edit per-language hub title sub-panel
 │   │   │   │   ├── send.py      # (stub)
 │   │   │   │   ├── senda.py     # (stub)
 │   │   │   │   ├── messages.py  # (stub)
@@ -240,6 +244,16 @@ core/configs ←── everywhere (settings, paths, admin_store)
 ### `Message` — Audit log
 Stores every bot↔user message exchange with timestamp and side (`Bot`/`User` enum via `MessageSide`).
 
+| Column | Type | Notes |
+|--------|------|-------|
+| `chat_id` | BigInteger | Part of composite PK (Telegram message_id is unique only within a chat) |
+| `message_id` | BigInteger | Part of composite PK |
+| `side` | Enum(MessageSide) | `bot` or `user` |
+| `text` | String | message text or caption |
+| `time` | DateTime | Server default CURRENT_TIMESTAMP |
+
+`AddMessage` uses `INSERT … ON CONFLICT DO NOTHING` so redelivered Telegram updates are idempotent.
+
 ### `MatchRound` — Matching round record
 | Column | Type | Notes |
 |--------|------|-------|
@@ -275,9 +289,12 @@ Stores every bot↔user message exchange with timestamp and side (`Bot`/`User` e
   └─ if no language set → state: ChooseLanguage → reply keyboard EN/RU → SetUserLanguage()
   └─ if already verified → SendHub(chat_id) immediately
   └─ state: GetPhoneNumber  → request contact share → store phone
-  └─ state: EmailGet        → free-text email input (must contain @nes.ru)
+  └─ state: EmailGet        → free-text email input (lowercased; must end with @nes.ru;
+                              cooldown after 3 wrong codes; rejects emails already
+                              owned by a verified user)
   └─ state: EmailConfirm    → CreateCode() → SendCode(email, code) via SMTP
-                              user enters 6-digit code → validate
+                              user enters 6-digit code → validate (3 attempts then
+                              cooldown to EmailGet)
   └─ state: Terms           → send terms.pdf → user accepts
   └─ verified = True
   └─ state: AboutNow        → inline prompt with 2 buttons:
@@ -300,7 +317,7 @@ HubKeyboard buttons:
   ├─ "My About"        → edits hub message to About sub-panel
   ├─ "Settings"        → edits hub message to Settings sub-panel
   └─ "Admin panel"     → visible only to admins (is_admin=True); edits hub message to AdminPanel
-        └─ sub-panels (Blocking, Admins, Matching, Statistics) edit same message
+        └─ sub-panels (Blocking, Admins, Matching, Statistics, Title) edit same message
         └─ "Back" → edits back to AdminPanel
         └─ "Back to hub" → edits back to HubKeyboard
 ```
@@ -383,9 +400,23 @@ Requires `TgUser.is_admin = True` in DB (checked via `IsAdmin(chat_id)` from `ad
 
 Accessed via Hub → "Admin panel" button (edits hub message in-place).
 
-Actions: Download logs | View user messages | Send DM | Broadcast | Block/Unblock | Run Matching / Send Feedback | Manage admins | Statistics
+Actions: Download logs | View user messages | Send DM | Broadcast | Block/Unblock | Run Matching / Send Feedback | Manage admins | Statistics | Title
+
+**Admin gating:** `RegisterAdminHandlers()` applies `AdminFilter` to every admin router (both `.message` and `.callback_query`), so non-admins cannot trigger admin handlers even if they reverse-engineer the callback data prefixes.
 
 **Admin change notifications:** When an admin adds or removes another admin, all other admins receive a notification with who performed the action and who was affected.
+
+### 8a. Title Sub-panel (admin sub-panel)
+
+The hub's title text per language is editable at runtime:
+
+```
+Admin Panel → 🏷️ Title → edits hub message to Title sub-panel
+  ├─ ✏️ Edit EN → state: TitlePanelStates.EditEN → admin types new EN title → SetTitle("en", ...)
+  └─ ✏️ Edit RU → state: TitlePanelStates.EditRU → admin types new RU title → SetTitle("ru", ...)
+```
+
+Titles are persisted in `data/title/title.json` via `core/configs/title_store.py`. `GetTitle(lang)` falls back to a built-in default if the file is missing or unreadable.
 
 ### 9. Statistics Panel (admin sub-panel)
 
@@ -480,7 +511,7 @@ added   = await AddAdmin(chat_id)  # bool — False if already admin
 removed = await RemoveAdmin(chat_id)  # bool — False if not admin
 ```
 
-Initial admin IDs are seeded by `EnsureDB()` from `data/admins/admins.json` (if it exists) or from `_DEFAULT_ADMIN_IDS = [749410326]`.
+Initial admin IDs are seeded by `EnsureDB()` from `data/admins/admins.json` (if it exists) AND from `DEFAULT_ADMIN_IDS` declared in `core/configs/admin_ids.py`. Default-admin chat_ids cannot be removed via `RemoveAdmin()` and `IsAdmin()` short-circuits to `True` for them — they are guaranteed admins regardless of the DB.
 
 ### Repository Pattern
 
@@ -586,6 +617,8 @@ text = await t_user(chat_id, "key.path", name="Alice")
 
 **Key namespaces:** `language.*`, `start.*`, `hub.*`, `settings.*`, `help.*`, `find.*`, `admin.*`, `matching.*`, `about.*`, `common.*`, `zero.*`
 
+The hub welcome text is **not** in translations — it is fetched at render time from `title_store.GetTitle(lang)` so admins can change it without redeploying.
+
 ---
 
 ## Configuration
@@ -618,9 +651,12 @@ data/
   temp/
   recsys/embedding/model/   ← HuggingFace model cache
   recsys/opensearch/data/
+  title/                    ← created by EnsurePaths(); used by title_store.py
 ```
 
 `data/admins/admins.json` — optional seed file read by `EnsureDB()` to populate initial admin `is_admin` flags. Not managed at runtime.
+
+`data/title/title.json` — runtime-managed, written by the admin Title sub-panel via `core/configs/title_store.SetTitle()`. Stores per-language hub titles; falls back to built-in defaults if unreadable.
 
 ---
 
@@ -645,7 +681,8 @@ main():
 2. LoggerStart(LoggerSetup)   # Configure structured logging
 3. EnsureDependencies():
    a. EnsureDB()              # Create PG tables if missing; ALTER TABLE for newer columns;
-                              #   seed admin is_admin flags from admins.json or defaults
+                              #   migrate message PK from (message_id) to (chat_id, message_id)
+                              #   if needed; seed admin is_admin flags from admins.json + defaults
    b. EnsureOpenSearchIndex() # Create OS index if missing
    c. EnsureSearchPipeline()  # Create normalization pipeline if missing
 4. SetExceptionHandlers()     # Asyncio + Aiogram error handlers
@@ -665,7 +702,8 @@ OnStartup() [registered as dp.startup hook]:
 OnShutdown() [registered as dp.shutdown hook]:
 1. NotifyOnShutdown()         # Send bot.log to all admins
 2. CloseOpenSearchClient()    # Graceful OpenSearch disconnect
-3. LoggerShutdown()           # Flush logs
+3. engine.dispose()           # Release SQLAlchemy connection pool
+4. LoggerShutdown()           # Stop QueueListener (flushes pending records) + logging.shutdown()
 ```
 
 Note: **No APScheduler** — there is no automatic matching job. Matching is triggered manually by admins.
@@ -759,15 +797,17 @@ The handlers for these are in `hub.py` (HubBack) and `admin.py` (PanelBack).
 
 - **No test suite** exists. Add tests under `tests/` following pytest-asyncio conventions.
 - **API layer** (`api/routers/nes_user.py`) is a stub — all endpoints are TODOs.
-- **Alembic** is listed as a dependency but no migration files exist yet; schema is created via `EnsureDB()` (`metadata.create_all` + explicit `ALTER TABLE IF NOT EXISTS` for columns added to existing tables).
+- **Alembic** is listed as a dependency but no migration files exist yet; schema is created via `EnsureDB()` (`metadata.create_all` + explicit `ALTER TABLE IF NOT EXISTS` for columns added to existing tables, plus an idempotent PK migration for the `message` table).
 - The ML model (Alibaba GTE) is downloaded on first run to `data/recsys/embedding/model/` — ensure write permissions and network access.
 - OpenSearch requires the `OPENSEARCH_INITIAL_ADMIN_PASSWORD` env var; TLS is disabled in dev config.
 - Rate limiting for broadcasts uses `AsyncLimiter(30, 1)` — 30 messages per second — to stay within Telegram API limits.
 - `HUB_MESSAGES` is an in-memory cache; `TgUser.panel_message_id` is the persistent DB-backed counterpart used to restore hub state after bot restarts.
+- **Username caching:** `bot/lib/chat/username.GetTgUsername()` is hit on every inbound and outbound message via the logging hook; results are cached in a 5-minute TTL `cachetools.TTLCache` to avoid hammering Telegram and the DB.
 - **Matching feedback analytics** (`GetMatchingStats()`) reports opted-out count, total rounds, last round date, and last round assignments, but no per-response breakdown UI exists yet.
 - **Statistics panel** sends stats as new separate messages (not hub edits) to avoid Telegram's 4096-char message length limit.
-- **DB export** (`⬇️ Download DB`) opens a sub-panel with one button per table; each writes a temporary single-sheet `.xlsx` to `data/temp/` via `openpyxl`, sends it, then deletes it. The `message` table can be large — export time scales with row count.
+- **DB export** (`⬇️ Download DB`) opens a sub-panel with one button per table; each writes a temporary single-sheet `.xlsx` to `data/temp/` via `openpyxl`, sends it, then deletes it (deletion is wrapped in `try/finally` so the temp file is removed even if `SendDocument` fails). The `message` table can be large — export time scales with row count.
 - **User bio (about) indexing**: when a user saves their bio, `UpsertAboutOpenSearch(nes_id, about_text)` is called — it extracts keywords via KeyBERT, enriches the text, and upserts to the `cv` side of the OpenSearch document.
+- **OpenSearch deletes** (`DeleteUserOpenSearch`) swallow `NotFoundError`, since users may be unverified before they ever indexed a CV/about doc.
 - **Help requests**: users can request help via Settings → Help → "Ask for help"; this silently notifies all admins with the user's `@username` and `chat_id`.
 
 ---
@@ -798,3 +838,6 @@ The handlers for these are in `hub.py` (HubBack) and `admin.py` (PanelBack).
 | `EnsureSearchPipeline` | Creates OpenSearch normalization pipeline for hybrid BM25+KNN search |
 | `PersonalMsg` | Dataclass `(chat_id, text)` used with `SendMessagesToGroup` for bulk sends |
 | `DocSide` | Enum: `mynes` or `cv` — which side of the OpenSearch document to upsert |
+| `DEFAULT_ADMIN_IDS` | Hard-coded chat_ids in `core/configs/admin_ids.py` that are always admins; cannot be removed at runtime |
+| `title_store` | JSON-backed per-language hub title overrides (`GetTitle`, `SetTitle`, `GetBothTitles`) used by the admin Title sub-panel |
+| `AdminFilter` | Aiogram filter applied to every admin router so only `is_admin=True` users can trigger admin handlers |
