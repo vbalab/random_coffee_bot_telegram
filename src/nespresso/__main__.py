@@ -16,7 +16,7 @@ from nespresso.bot.lifecycle.menu import SetMenu
 from nespresso.core.configs.paths import EnsurePaths
 from nespresso.core.logs import flow as logs
 from nespresso.core.logs.bot import LoggerSetup
-from nespresso.db.session import EnsureDB
+from nespresso.db.session import EnsureDB, engine
 from nespresso.recsys.searching.client import CloseOpenSearchClient
 from nespresso.recsys.searching.index import EnsureOpenSearchIndex
 from nespresso.recsys.searching.search_pipeline import EnsureSearchPipeline
@@ -44,6 +44,7 @@ async def OnShutdown() -> None:
     await admin.NotifyOnShutdown()
 
     await CloseOpenSearchClient()
+    await engine.dispose()
 
     await logs.LoggerShutdown()
 

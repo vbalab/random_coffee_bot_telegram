@@ -17,5 +17,11 @@ def CheckColumnBelongsToModel(
 def CheckOnlyOneArgProvided(**kwargs: Any) -> None:
     provided = [key for key, value in kwargs.items() if value is not None]
 
-    if len(provided) != 1:
-        raise ValueError(f"More than one argument is provided: {', '.join(provided)}.")
+    if len(provided) == 0:
+        raise ValueError(
+            f"Exactly one of {list(kwargs.keys())} must be provided, got none."
+        )
+    if len(provided) > 1:
+        raise ValueError(
+            f"Exactly one argument expected, got multiple: {', '.join(provided)}."
+        )

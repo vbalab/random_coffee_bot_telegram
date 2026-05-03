@@ -239,9 +239,9 @@ async def CommandStartEmailGet(message: types.Message, state: FSMContext) -> Non
         )
         return
 
-    email = message.text.replace(" ", "")
+    email = message.text.replace(" ", "").lower()
 
-    if "@nes.ru" not in email:
+    if not email.endswith("@nes.ru"):
         await SendMessage(
             chat_id=chat_id,
             text=t(lang, "start.email_invalid"),

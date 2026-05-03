@@ -17,7 +17,7 @@ def _NesUserPydanticToSQLAlchemy(instance: NesUserIn) -> NesUser:
     return NesUser(**raw)
 
 
-async def _FetchNesUserData(nes_email: int) -> dict[str, Any]:
+async def _FetchNesUserData(nes_email: str) -> dict[str, Any]:
     base_url = settings.NES_API_BASE_URL.rstrip("/")
     url = f"{base_url}/user/byEmail/{nes_email}"
 
@@ -35,7 +35,7 @@ async def _FetchNesUserData(nes_email: int) -> dict[str, Any]:
     return response.json()
 
 
-async def GetNesUserFromMyNES(nes_email: int) -> NesUserIn | None:
+async def GetNesUserFromMyNES(nes_email: str) -> NesUserIn | None:
     data = await _FetchNesUserData(nes_email)
 
     try:

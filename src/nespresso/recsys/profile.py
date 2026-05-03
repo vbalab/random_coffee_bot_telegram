@@ -26,7 +26,7 @@ class Profile:
         nes_work = None
 
         ctx = await GetUserContextService()
-        chat_id = await ctx.GetTgChatIdBy(nes_id)
+        chat_id = await ctx.GetTgChatIdBy(nes_id=nes_id)
 
         if chat_id:
             if tg := await GetTgUsername(chat_id):
