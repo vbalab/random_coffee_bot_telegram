@@ -16,9 +16,8 @@ from aiogram.types import (
     ReplyKeyboardRemove,
 )
 
-from nespresso.api.request import GetNesUserFromMyNES
+from nespresso.api.request import EmailLookup, ResolveNesUserByEmail
 from nespresso.bot.handlers.client.email.verification import CreateCode, SendCode
-from nespresso.bot.lib.chat.username import GetTgUsername
 from nespresso.bot.lib.message.checks import CheckVerified
 from nespresso.bot.lib.message.i18n import (
     GetUserLanguage,
@@ -27,7 +26,6 @@ from nespresso.bot.lib.message.i18n import (
     t,
 )
 from nespresso.bot.lib.message.io import ContextIO, SendDocument, SendMessage
-from nespresso.core.configs.admin_store import GetAdminIds
 from nespresso.core.configs.paths import PATH_TERMS_OF_USE
 from nespresso.db.models.tg_user import TgUser
 from nespresso.db.services.user_context import GetUserContextService
@@ -36,6 +34,18 @@ from nespresso.recsys.searching.document import UpsertAboutOpenSearch
 router = Router()
 
 # TODO: add bot's: picture, about, description, description picture
+
+
+async def _DeleteMessageSafe(message: types.Message | None, chat_id: int) -> None:
+    if message is None:
+        return
+    try:
+        await message.delete()
+    except Exception:
+        logging.debug(
+            f"Failed to delete message for chat_id={chat_id}",
+            exc_info=True,
+        )
 
 
 class StartStates(StatesGroup):
@@ -152,14 +162,17 @@ async def CommandStartChooseLanguage(message: types.Message, state: FSMContext) 
 
     lang = await GetUserLanguage(chat_id)
 
-    await SendMessage(chat_id=chat_id, text=t(lang, "language.selected"))
+    # ReplyKeyboardRemove dismisses the EN/RU reply keyboard the moment a valid
+    # language is picked (the next step adds its own keyboard / hub as needed).
+    await SendMessage(
+        chat_id=chat_id,
+        text=t(lang, "language.selected"),
+        reply_markup=ReplyKeyboardRemove(),
+    )
 
     if await CheckVerified(chat_id=chat_id):
         from nespresso.bot.handlers.client.commands.hub import SendHub
 
-        await SendMessage(
-            chat_id=chat_id, reply_markup=ReplyKeyboardRemove(), text="\u200b"
-        )
         await state.clear()
         await SendHub(chat_id)
         return
@@ -270,8 +283,59 @@ async def CommandStartEmailGet(message: types.Message, state: FSMContext) -> Non
 
     wait_message = await SendMessage(
         chat_id=chat_id,
-        text=t(lang, "start.sending_code"),
+        text=t(lang, "start.checking_email"),
     )
+
+    # Resolve email -> nes_id BEFORE emailing a code: DB-first (synced MyNES
+    # directory), falling back to a single /user/byEmail call. A code is only
+    # sent if the address belongs to a real, directory-shared NES alumnus.
+    try:
+        resolution = await ResolveNesUserByEmail(email)
+    except Exception:
+        # Only genuine transient failures (timeouts, 5xx) reach here — a real
+        # 403/404 is classified by ResolveNesUserByEmail, not raised.
+        logging.exception(
+            f"ResolveNesUserByEmail failed for chat_id={chat_id}, email={email}"
+        )
+        await _DeleteMessageSafe(wait_message, chat_id)
+        await SendMessage(
+            chat_id=chat_id,
+            text=t(lang, "start.email_check_failed"),
+            context=ContextIO.UserFailed,
+        )
+        return
+
+    await _DeleteMessageSafe(wait_message, chat_id)
+
+    # 404: the email is unknown to NES — just ask the user to re-enter it.
+    if resolution.status is EmailLookup.not_found:
+        await SendMessage(
+            chat_id=chat_id,
+            text=t(lang, "start.email_not_in_nes"),
+            context=ContextIO.UserFailed,
+        )
+        return
+
+    # 403: a real alumnus whose profile isn't shared in the directory — give
+    # them the actionable fix instead of a misleading "try again later".
+    if resolution.status is EmailLookup.not_shared:
+        await SendMessage(
+            chat_id=chat_id,
+            text=t(lang, "start.email_not_shared"),
+            context=ContextIO.UserFailed,
+        )
+        return
+
+    # status is `found`
+    if not resolution.alumni or resolution.nes_id is None:
+        await SendMessage(
+            chat_id=chat_id,
+            text=t(lang, "start.not_alumni"),
+            context=ContextIO.UserFailed,
+        )
+        return
+
+    nes_id = resolution.nes_id
 
     code = CreateCode()
     await SendCode(email=email, code=code)
@@ -281,16 +345,7 @@ async def CommandStartEmailGet(message: types.Message, state: FSMContext) -> Non
         text=t(lang, "start.sent_code"),
     )
 
-    if wait_message is not None:
-        try:
-            await wait_message.delete()
-        except Exception:
-            logging.debug(
-                f"Failed to delete wait message for chat_id={chat_id}",
-                exc_info=True,
-            )
-
-    await state.set_data({"code": code, "attempts": 0})
+    await state.set_data({"code": code, "attempts": 0, "nes_id": nes_id})
     await state.set_state(StartStates.EmailConfirm)
 
 
@@ -328,47 +383,25 @@ async def CommandStartEmailConfirm(message: types.Message, state: FSMContext) ->
         )
         return
 
+    # Existence + alumni were already verified at the EmailGet step, which stored
+    # the resolved nes_id in FSM state — no MyNES API call is needed here.
+    nes_id = data.get("nes_id")
+    if nes_id is None:
+        logging.error(
+            f"EmailConfirm: missing nes_id in state for chat_id={chat_id}; "
+            "restarting email step"
+        )
+        await SendMessage(
+            chat_id=chat_id,
+            text=t(lang, "start.email_check_failed"),
+            context=ContextIO.UserFailed,
+        )
+        await state.set_state(StartStates.EmailGet)
+        await state.set_data({})
+        return
+
     ctx = await GetUserContextService()
-    nes_email = await ctx.GetTgUser(chat_id, TgUser.nes_email)
-
-    try:
-        nes_user = await GetNesUserFromMyNES(nes_email)
-    except Exception:
-        logging.exception(
-            f"GetNesUserFromMyNES raised an exception for chat_id={chat_id}, email={nes_email}"
-        )
-        nes_user = None
-
-    if nes_user is None:
-        username = await GetTgUsername(chat_id) or str(chat_id)
-        admin_text = t(
-            "en",
-            "start.email_not_in_nes_admin",
-            username=username,
-            chat_id=chat_id,
-            email=nes_email or "",
-        )
-        for admin_id in await GetAdminIds():
-            await SendMessage(chat_id=admin_id, text=admin_text)
-
-        await SendMessage(
-            chat_id=chat_id,
-            text=t(lang, "start.email_not_in_nes"),
-            context=ContextIO.UserFailed,
-        )
-        await state.set_state(StartStates.EmailGet)
-        return
-
-    if not nes_user.alumni:
-        await SendMessage(
-            chat_id=chat_id,
-            text=t(lang, "start.not_alumni"),
-            context=ContextIO.UserFailed,
-        )
-        await state.set_state(StartStates.EmailGet)
-        return
-
-    await ctx.UpdateTgUser(chat_id=chat_id, column=TgUser.nes_id, value=nes_user.nes_id)
+    await ctx.UpdateTgUser(chat_id=chat_id, column=TgUser.nes_id, value=nes_id)
 
     await SendMessage(
         chat_id=chat_id,

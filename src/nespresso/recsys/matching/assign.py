@@ -1,8 +1,11 @@
 import logging
 import random
 
+from sqlalchemy import select
+
 from nespresso.bot.lib.message.i18n import GetUserLanguage, t
 from nespresso.bot.lib.message.io import PersonalMsg, SendMessagesToGroup
+from nespresso.db.models.nes_user import NesUser
 from nespresso.db.models.tg_user import TgUser
 from nespresso.db.services.user_context import GetUserContextService
 from nespresso.recsys.profile import Profile
@@ -86,12 +89,16 @@ async def CreateMatching(triggered_by: int) -> dict[int, list[int]]:
     """
     ctx = await GetUserContextService()
 
-    # Only verified, non-blocked, non-opted-out users with a linked NES profile
+    # Only verified, non-blocked, non-opted-out users whose linked NES profile
+    # is still listed in the MyNES directory (delisted users are excluded — they
+    # opted out of being discoverable). The `IN (listed nes_ids)` subquery also
+    # implies nes_id IS NOT NULL.
+    listed_nes_ids = select(NesUser.nes_id).where(NesUser.listed.is_(True))
     all_users = await ctx.GetTgUsersOnCondition(
         condition=TgUser.verified
         & ~TgUser.blocked
         & ~TgUser.matching_paused
-        & TgUser.nes_id.isnot(None),
+        & TgUser.nes_id.in_(listed_nes_ids),
         column=TgUser.chat_id,
     )
 

@@ -30,6 +30,7 @@ services:
       - discovery.type=single-node
       - bootstrap.memory_lock=true
       - plugins.security.disabled=true
+      - DISABLE_INSTALL_DEMO_CONFIG=true
       - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx2g"
       - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_INITIAL_ADMIN_PASSWORD}
     ulimits:
@@ -40,8 +41,8 @@ services:
       test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 6
-      start_period: 120s
+      retries: 12
+      start_period: 300s
     networks:
       - nespresso_network
     ports:

@@ -1,3 +1,4 @@
+import logging
 import math
 import uuid
 from enum import Enum
@@ -162,8 +163,13 @@ async def CommandFindCallback(
         next=search.CanScrollFurtherForward(),
     )
 
+    text = page.GetFormattedText()
+    logging.info(
+        f"chat_id={callback_query.from_user.id}  (scroll)  << {text!r}"
+    )
+
     await callback_query.message.edit_text(
-        text=page.GetFormattedText(),
+        text=text,
         reply_markup=markup,
     )
     await callback_query.answer()

@@ -16,6 +16,8 @@ class UserService:
 
         # - Nes -
         self.UpsertNesUser = self.nes_user_repo.UpsertNesUsers
+        self.SyncUpsertNesUsers = self.nes_user_repo.SyncUpsertNesUsers
+        self.DelistMissingNesUsers = self.nes_user_repo.DelistMissingNesUsers
 
         # --- Read ---
         # - Tg -
@@ -26,6 +28,8 @@ class UserService:
         # - Nes -
         self.GetNesUsersOnCondition = self.nes_user_repo.GetNesUsersOnCondition
         self.GetNesUser = self.nes_user_repo.GetNesUser
+        self.GetNesUserByEmail = self.nes_user_repo.GetNesUserByEmail
+        self.GetNesUserHashes = self.nes_user_repo.GetNesUserHashes
 
         # --- Update ---
         # - Tg -

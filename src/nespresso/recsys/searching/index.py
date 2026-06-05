@@ -31,13 +31,47 @@ class DocAttr:
         )
 
 
-async def EnsureOpenSearchIndex() -> None:
-    if await client.indices.exists(index=INDEX_NAME):
-        await client.indices.clear_cache(index=INDEX_NAME, query=True)
-        return
+# Structured `f_*` fields (stored in _source) for query-filter re-scoring + rerank
+# cards. See recsys/searching/filtering.py. Controlled-vocab arrays MUST be keyword
+# so the structured `terms` query matches exactly; free-text fields are text.
+_STRUCTURED_PROPERTIES: dict = {
+    "name": {"type": "text"},
+    "f_city": {"type": "keyword"},
+    "f_region": {"type": "keyword"},
+    "f_country": {"type": "keyword"},
+    "f_program": {"type": "keyword"},
+    "f_class": {"type": "keyword"},
+    "f_professional": {"type": "keyword"},
+    "f_industry": {"type": "keyword"},
+    "f_country_exp": {"type": "keyword"},
+    "f_company": {"type": "text"},
+    "f_universities": {"type": "text"},
+}
 
+
+async def EnsureOpenSearchIndex() -> bool:
+    """
+    Create the index if it is missing, and ensure the structured `f_*` field
+    mappings exist (so indices created before those fields existed map them as
+    keyword, not dynamically as text). Returns True if the index was just created
+    (so the directory sync can force a full re-index), False if it already existed.
+    """
     text_config = {"type": "text"}
     embedding_config = {"type": "knn_vector", "dimension": EMBEDDING_LEN}
+
+    if await client.indices.exists(index=INDEX_NAME):
+        await client.indices.clear_cache(index=INDEX_NAME, query=True)
+        # Ensure the structured fields are mapped as keyword on pre-existing
+        # indices (no-op if already present; the next sync populates them).
+        try:
+            await client.indices.put_mapping(
+                index=INDEX_NAME, body={"properties": _STRUCTURED_PROPERTIES}
+            )
+        except Exception:
+            logging.warning(
+                "Could not ensure structured field mappings.", exc_info=True
+            )
+        return False
 
     fields = [
         (DocSide.mynes, DocAttr.Field.text, text_config),
@@ -45,24 +79,19 @@ async def EnsureOpenSearchIndex() -> None:
         (DocSide.cv, DocAttr.Field.text, text_config),
         (DocSide.cv, DocAttr.Field.embedding, embedding_config),
     ]
+    properties: dict = {
+        f"{side.value}_{field.value}": config for side, field, config in fields
+    }
+    properties.update(_STRUCTURED_PROPERTIES)
 
     create_body = {
-        "settings": {
-            "index.knn": True,
-        },
-        "mappings": {
-            "properties": {
-                f"{side.value}_{field.value}": config for side, field, config in fields
-            }
-        },
+        "settings": {"index.knn": True},
+        "mappings": {"properties": properties},
     }
 
-    await client.indices.create(
-        index=INDEX_NAME,
-        body=create_body,
-    )
-
+    await client.indices.create(index=INDEX_NAME, body=create_body)
     logging.info(f"# OpenSearch '{INDEX_NAME}' index created.")
+    return True
 
 
 # TODO: remove this later

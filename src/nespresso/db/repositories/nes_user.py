@@ -1,7 +1,8 @@
 import logging
-from typing import TypeVar, overload
+from collections.abc import Iterable, Sequence
+from typing import Any, TypeVar, overload
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm.attributes import InstrumentedAttribute
@@ -13,6 +14,11 @@ from nespresso.db.repositories.checking import (
 )
 
 T = TypeVar("T")
+
+# Bulk-write chunk sizes. Postgres/asyncpg caps a single statement at 32767
+# bound parameters; a sync row carries ~19 columns, so 500 rows ≈ 9.5k params.
+_UPSERT_CHUNK = 500
+_SELECT_CHUNK = 1000
 
 
 class NesUserRepository:
@@ -47,7 +53,62 @@ class NesUserRepository:
 
             await session.commit()
 
+    async def SyncUpsertNesUsers(self, rows: list[dict[str, Any]]) -> None:
+        """
+        Full-mirror upsert used by the hourly MyNES directory sync.
+
+        Unlike `UpsertNesUsers`, this writes every supplied column verbatim —
+        including ``None`` — so that a profile that lost work/education data
+        (because the user revoked that flag) is overwritten rather than kept
+        stale. ``nes_email`` and ``created_at`` are intentionally NOT part of
+        `rows`, so they are preserved across syncs (the directory feed carries
+        no email).
+        """
+        if not rows:
+            return
+
+        update_cols = [c for c in rows[0] if c != "nes_id"]
+
+        async with self.session() as session:
+            for start in range(0, len(rows), _UPSERT_CHUNK):
+                chunk = rows[start : start + _UPSERT_CHUNK]
+                stmt = insert(NesUser).values(chunk)
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=[NesUser.nes_id],
+                    set_={c: getattr(stmt.excluded, c) for c in update_cols},
+                )
+                await session.execute(stmt)
+
+            await session.commit()
+
+        logging.info(f"SyncUpsertNesUsers: {len(rows)} rows upserted.")
+
     # ----- Read -----
+
+    async def GetNesUserByEmail(self, nes_email: str) -> NesUser | None:
+        async with self.session() as session:
+            result = await session.execute(
+                select(NesUser).where(NesUser.nes_email == nes_email).limit(1)
+            )
+            return result.scalars().first()
+
+    async def GetNesUserHashes(
+        self, nes_ids: Sequence[int]
+    ) -> dict[int, str | None]:
+        """Return ``{nes_id: mynes_text_hash}`` for the given ids (sync diffing)."""
+        ids = list(nes_ids)
+        hashes: dict[int, str | None] = {}
+        async with self.session() as session:
+            for start in range(0, len(ids), _SELECT_CHUNK):
+                chunk = ids[start : start + _SELECT_CHUNK]
+                result = await session.execute(
+                    select(NesUser.nes_id, NesUser.mynes_text_hash).where(
+                        NesUser.nes_id.in_(chunk)
+                    )
+                )
+                for nes_id, text_hash in result.all():
+                    hashes[nes_id] = text_hash
+        return hashes
 
     @overload
     async def GetNesUsersOnCondition(
@@ -104,5 +165,31 @@ class NesUserRepository:
         return result[0] if result else None
 
     # ----- Update -----
+
+    async def DelistMissingNesUsers(self, fresh_ids: Iterable[int]) -> list[int]:
+        """
+        Mark every currently-listed row whose ``nes_id`` is NOT in `fresh_ids`
+        as delisted (``listed = False``) and clear its ``mynes_text_hash`` so a
+        future re-appearance forces a re-index. Returns the delisted nes_ids
+        (the caller removes their OpenSearch documents).
+
+        Safety: `fresh_ids` is consumed into a set by the caller; this method
+        must never be called with an empty set (that would delist everyone),
+        which the sync orchestrator guards against on fetch failure.
+        """
+        ids = list(fresh_ids)
+        async with self.session() as session:
+            result = await session.execute(
+                update(NesUser)
+                .where(NesUser.listed.is_(True), NesUser.nes_id.notin_(ids))
+                .values(listed=False, mynes_text_hash=None)
+                .returning(NesUser.nes_id)
+            )
+            delisted = [row[0] for row in result.all()]
+            await session.commit()
+
+        if delisted:
+            logging.info(f"DelistMissingNesUsers: {len(delisted)} rows delisted.")
+        return delisted
 
     # ----- Delete -----

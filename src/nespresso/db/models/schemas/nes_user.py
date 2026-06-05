@@ -1,4 +1,6 @@
-from pydantic import BaseModel, ConfigDict, Field
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class PreEducation(BaseModel):
@@ -75,3 +77,16 @@ class NesUserIn(NesUserOut):
     )
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator(
+        "hobbies",
+        "industry_expertise",
+        "country_expertise",
+        "professional_expertise",
+        mode="before",
+    )
+    @classmethod
+    def _DropNoneFromStringList(cls, value: Any) -> Any:
+        if isinstance(value, list):
+            return [item for item in value if item is not None]
+        return value

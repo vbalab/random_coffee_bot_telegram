@@ -1,11 +1,22 @@
 .vscode
 *cache
 *__pycache__/
+*.pyc
 
-data
-try
+# secrets / local config
 .env
+*.env
+!.env.example
+
+# runtime + heavy data (logs, embedding model, opensearch data, temp, admins/title)
+data
+
+# local dev scratch
+try
 venv
 notes.md
 code_combined.txt
 run.sh
+
+# generated eval artifact (reproducible from eval/dataset.py)
+eval/dataset.json

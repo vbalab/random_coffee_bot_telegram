@@ -55,6 +55,22 @@ async def EnsureDB() -> None:
                 "CREATE INDEX IF NOT EXISTS ix_nes_user_nes_email ON nes_user (nes_email)"
             )
         )
+        # MyNES directory sync columns (see NesUser model).
+        await conn.execute(
+            text(
+                "ALTER TABLE nes_user ADD COLUMN IF NOT EXISTS "
+                "listed BOOLEAN NOT NULL DEFAULT TRUE"
+            )
+        )
+        await conn.execute(
+            text("ALTER TABLE nes_user ADD COLUMN IF NOT EXISTS mynes_text_hash VARCHAR")
+        )
+        await conn.execute(
+            text(
+                "ALTER TABLE nes_user ADD COLUMN IF NOT EXISTS "
+                "synced_at TIMESTAMPTZ"
+            )
+        )
 
         # Migration: convert message PK from (message_id) to (chat_id, message_id)
         # because Telegram message_id is unique only within a chat.

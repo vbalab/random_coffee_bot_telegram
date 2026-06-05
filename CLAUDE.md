@@ -73,7 +73,9 @@ src/nespresso/
 ├── bot/                     # Telegram bot
 │   ├── lifecycle/
 │   │   ├── creator.py       # Bot + Dispatcher + BOT_ID singletons
-│   │   └── menu.py          # SetMenu() — register /start, /cancel commands
+│   │   ├── menu.py          # SetMenu() — register /start, /cancel commands
+│   │   └── sync_scheduler.py # StartSyncScheduler()/StopSyncScheduler() — hourly
+│   │                        #   asyncio loop driving api/sync.SyncFromMyNES()
 │   ├── handlers/
 │   │   ├── client/
 │   │   │   ├── commands/
@@ -145,8 +147,11 @@ src/nespresso/
 │       └── emoji.py         # RandomEmoji() for match identity
 ├── api/
 │   ├── app.py               # FastAPI app + lifespan
-│   ├── request.py           # GetNesUserFromMyNES(), AllowDataSharingPermission(),
-│   │                        #   DenyDataSharingPermission()
+│   ├── request.py           # FetchUsersList() [GET /user/list], GetNesUserFromMyNES()
+│   │                        #   [GET /user/byEmail], ResolveNesUserByEmail() (DB-first
+│   │                        #   + byEmail fallback). NO data-sharing-permission calls.
+│   ├── sync.py              # SyncFromMyNES() — hourly directory mirror (DB + OpenSearch),
+│   │                        #   SyncReport, LAST_SYNC
 │   └── routers/
 │       └── nes_user.py      # (stub — TODOs only)
 └── translations/
@@ -211,7 +216,7 @@ core/configs ←── everywhere (settings, paths, admin_store)
 | Column | Type | Notes |
 |--------|------|-------|
 | `chat_id` | BigInteger PK | Telegram chat ID |
-| `nes_id` | BigInteger FK→NesUser | NES profile link, indexed, nullable |
+| `nes_id` | BigInteger | NES profile link, indexed, nullable. **Plain column, NOT a DB foreign key** — deleting a NesUser row does not cascade. |
 | `nes_email` | String | indexed |
 | `username` | String | Telegram @handle, indexed |
 | `phone_number` | String | indexed |
@@ -225,16 +230,20 @@ core/configs ←── everywhere (settings, paths, admin_store)
 | `created_at` | DateTime | Server default CURRENT_TIMESTAMP |
 | `updated_at` | DateTime | Server default CURRENT_TIMESTAMP |
 
-### `NesUser` — Alumni profile (sourced from NES API)
+### `NesUser` — Alumni profile (mirrored from the MyNES directory)
 | Column | Type | Notes |
 |--------|------|-------|
 | `nes_id` | BigInteger PK | |
+| `nes_email` | String | indexed. Set only via the byEmail path / registration; **the directory feed carries no email**, so the hourly sync preserves it. |
 | `name` | String | |
 | `city/region/country` | String | |
 | `program/class_name` | String | NES study program |
 | `hobbies/industry_expertise/country_expertise/professional_expertise` | JSON array | Skills/interests |
 | `main_work/additional_work` | JSON object | Employment |
 | `pre_nes_education/post_nes_education` | JSON array | Education history |
+| `listed` | Boolean | In the MyNES directory (`Show in a class' directory`). Sync sets False + drops the OpenSearch doc when a user disappears. Default True. |
+| `mynes_text_hash` | String | sha256 of indexed `mynes` text; lets sync skip re-embedding unchanged profiles. |
+| `synced_at` | DateTime | Last directory refresh. |
 
 **Key methods on `NesUser`:**
 - `SelfDescription()` — name, location, program/class
@@ -292,9 +301,14 @@ Stores every bot↔user message exchange with timestamp and side (`Bot`/`User` e
   └─ state: EmailGet        → free-text email input (lowercased; must end with @nes.ru;
                               cooldown after 3 wrong codes; rejects emails already
                               owned by a verified user)
-  └─ state: EmailConfirm    → CreateCode() → SendCode(email, code) via SMTP
-                              user enters 6-digit code → validate (3 attempts then
-                              cooldown to EmailGet)
+                              → ResolveNesUserByEmail(email): DB-first lookup in the
+                                synced nes_user table, falling back to ONE
+                                GET /user/byEmail call. Only if a real alumnus is
+                                found do we CreateCode() → SendCode() and stash the
+                                resolved nes_id in FSM state. (No data-sharing call.)
+  └─ state: EmailConfirm    → user enters 6-digit code → validate (3 attempts then
+                              cooldown to EmailGet). On success: assign the FSM-stashed
+                              nes_id to the TgUser — NO MyNES API call here.
   └─ state: Terms           → send terms.pdf → user accepts
   └─ verified = True
   └─ state: AboutNow        → inline prompt with 2 buttons:
@@ -687,7 +701,10 @@ main():
    c. EnsureSearchPipeline()  # Create normalization pipeline if missing
 4. SetExceptionHandlers()     # Asyncio + Aiogram error handlers
 5. TestEmail()                # Verify SMTP credentials on startup, log warning if failed
-6. dp.start_polling(bot, drop_pending_updates=True)
+6. SyncFromMyNES("startup")   # BLOCKING first sync — bot does not serve users until the
+                              #   directory is mirrored (seconds if the index is intact;
+                              #   full re-index if it was wiped). Proceeds on failure.
+7. dp.start_polling(bot, drop_pending_updates=True)
 
 OnStartup() [registered as dp.startup hook]:
 1. SetMenu()                  # Register /start, /cancel bot commands
@@ -698,15 +715,63 @@ OnStartup() [registered as dp.startup hook]:
 6. SetBotMiddleware(dp)       # Logging + block-check middleware
 7. NotifyOnStartup()          # Send "Bot started" to all admins
 8. ProcessPendingUpdates()    # Handle messages received while offline
+9. StartSyncScheduler()       # Launch the PERIODIC MyNES sync loop (sleeps first, then
+                              #   syncs every interval — the startup sync already ran in main())
 
 OnShutdown() [registered as dp.shutdown hook]:
-1. NotifyOnShutdown()         # Send bot.log to all admins
-2. CloseOpenSearchClient()    # Graceful OpenSearch disconnect
-3. engine.dispose()           # Release SQLAlchemy connection pool
-4. LoggerShutdown()           # Stop QueueListener (flushes pending records) + logging.shutdown()
+1. StopSyncScheduler()        # Cancel the sync loop (before clients close)
+2. NotifyOnShutdown()         # Send bot.log to all admins
+3. CloseOpenSearchClient()    # Graceful OpenSearch disconnect
+4. CloseMyNesClient()         # Close the shared httpx client to MyNES
+5. engine.dispose()           # Release SQLAlchemy connection pool
+6. LoggerShutdown()           # Stop QueueListener (flushes pending records) + logging.shutdown()
 ```
 
-Note: **No APScheduler** — there is no automatic matching job. Matching is triggered manually by admins.
+Note: **No APScheduler for matching** — matching is still triggered manually by admins.
+The MyNES directory sync, however, runs automatically on a lightweight asyncio
+loop (`bot/lifecycle/sync_scheduler.py`), not APScheduler.
+
+---
+
+## MyNES Directory Sync (`api/sync.py`)
+
+The bot mirrors the MyNES alumni directory into Postgres + OpenSearch instead of
+fetching users one-by-one. `SyncFromMyNES(trigger)` runs once at startup
+(**blocking, before polling** — see Startup Sequence), then every
+`MYNES_SYNC_INTERVAL_SECONDS` (default 3600) via the periodic scheduler, plus on
+demand from the admin MyNES panel. It is concurrency-guarded by an `asyncio.Lock`
+(a second caller gets a `SyncReport(busy=True)` no-op).
+
+```
+SyncFromMyNES(trigger):
+  1. FetchUsersList()  →  GET /user/list  (NO email/login in the payload!)
+  2. Dedupe to one record per *alumni* nes_id (feed has byte-identical dupes).
+     If the feed is empty → abort WITHOUT delisting (safety).
+  3. For each alumnus: build FullDescription + sha256 hash. Compare to the
+     stored mynes_text_hash; only *changed* profiles are re-embedded.
+  4. Batch-embed changed texts off the event loop (asyncio.to_thread →
+     CreateEmbeddings) and bulk-upsert the `mynes` side into OpenSearch
+     (cv/about side is preserved via doc_as_upsert).
+  5. Full-mirror upsert every alumni row (SyncUpsertNesUsers) — overwrites
+     removed fields with NULL; preserves nes_email + created_at. A profile that
+     failed to index gets hash=NULL so the next run retries it.
+  6. DelistMissingNesUsers(fresh_ids): anyone no longer in the directory →
+     listed=False, mynes_text_hash=NULL, and their OpenSearch doc is deleted
+     (BulkDeleteOpenSearch) so they stop being searchable/matchable.
+```
+
+**Consequences worth knowing:**
+- The directory is the source of truth for *discoverability*. A verified bot
+  user who is **not** in `/user/list` is delisted: removed from Find search and
+  excluded from matching (`CreateMatching` filters on `NesUser.listed`). They can
+  still use the bot. (Aligns with MyNES's "Show in a class' directory" consent
+  model; the old `data-sharing-permission` flag is gone.)
+- Delisting deletes the *whole* OpenSearch doc, including the `cv`/about side. If
+  such a user re-appears, the next sync re-indexes their `mynes` side but their
+  self-written bio is only re-indexed when they next save it.
+- Registration no longer calls MyNES at the confirm step — `ResolveNesUserByEmail`
+  resolves nes_id at the email step (DB-first, byEmail fallback). Once MyNES adds
+  email to `/user/list`, the byEmail fallback stops firing with zero code change.
 
 ---
 
