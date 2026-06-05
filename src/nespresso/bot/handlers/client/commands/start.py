@@ -50,7 +50,6 @@ async def _DeleteMessageSafe(message: types.Message | None, chat_id: int) -> Non
 
 class StartStates(StatesGroup):
     ChooseLanguage = State()
-    GetPhoneNumber = State()
     EmailGet = State()
     EmailConfirm = State()
     Terms = State()
@@ -99,20 +98,6 @@ def LanguageKeyboard() -> ReplyKeyboardMarkup:
     )
 
 
-async def AskForContact(chat_id: int, lang: str) -> None:
-    button = KeyboardButton(
-        text=t(lang, "start.share_contact_button"),
-        request_contact=True,
-    )
-    keyboard = ReplyKeyboardMarkup(keyboard=[[button]], resize_keyboard=True)
-
-    await SendMessage(
-        chat_id=chat_id,
-        text=t(lang, "start.share_contact"),
-        reply_markup=keyboard,
-    )
-
-
 @router.message(StateFilter(None), Command("start"))
 async def CommandStart(message: types.Message, state: FSMContext) -> None:
     chat_id = message.chat.id
@@ -135,8 +120,11 @@ async def CommandStart(message: types.Message, state: FSMContext) -> None:
         await SendHub(chat_id)
         return
 
-    await AskForContact(chat_id, lang)
-    await state.set_state(StartStates.GetPhoneNumber)
+    await SendMessage(
+        chat_id=chat_id,
+        text=t(lang, "start.enter_email"),
+    )
+    await state.set_state(StartStates.EmailGet)
 
 
 @router.message(StateFilter(StartStates.ChooseLanguage), F.content_type == "text")
@@ -177,57 +165,10 @@ async def CommandStartChooseLanguage(message: types.Message, state: FSMContext) 
         await SendHub(chat_id)
         return
 
-    await AskForContact(chat_id, lang)
-    await state.set_state(StartStates.GetPhoneNumber)
-
-
-@router.message(StateFilter(StartStates.GetPhoneNumber))
-async def CommandStartGetPhoneNumber(message: types.Message, state: FSMContext) -> None:
-    chat_id = message.chat.id
-    lang = await GetUserLanguage(chat_id)
-
-    if message.contact is None:
-        await SendMessage(
-            chat_id=chat_id,
-            text=t(lang, "start.contact_missing"),
-            context=ContextIO.UserFailed,
-        )
-        return
-
-    if message.contact.user_id is None or message.from_user is None:
-        await SendMessage(
-            chat_id=chat_id,
-            text=t(lang, "start.contact_unavailable"),
-            context=ContextIO.UserFailed,
-        )
-        return
-
-    if message.contact.user_id != message.from_user.id:
-        await SendMessage(
-            chat_id=chat_id,
-            text=t(lang, "start.contact_foreign"),
-            context=ContextIO.UserFailed,
-        )
-        return
-
-    ctx = await GetUserContextService()
-    await ctx.UpdateTgUser(
-        chat_id=chat_id,
-        column=TgUser.phone_number,
-        value=message.contact.phone_number,
-    )
-
-    await SendMessage(
-        chat_id=chat_id,
-        text=t(lang, "common.thanks"),
-        reply_markup=ReplyKeyboardRemove(),
-    )
-
     await SendMessage(
         chat_id=chat_id,
         text=t(lang, "start.enter_email"),
     )
-
     await state.set_state(StartStates.EmailGet)
 
 

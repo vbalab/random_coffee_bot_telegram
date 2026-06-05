@@ -33,11 +33,6 @@ class TgUser(Base):
         index=True,
         nullable=True,
     )
-    phone_number: Mapped[str | None] = mapped_column(
-        String,
-        index=True,
-        nullable=True,
-    )
     language: Mapped[str | None] = mapped_column(
         String,
         nullable=True,

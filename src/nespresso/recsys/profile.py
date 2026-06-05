@@ -10,7 +10,6 @@ from nespresso.db.services.user_context import GetUserContextService
 class Profile:
     nes_id: int
     username: str | None
-    phone_number: str | None
     email: str | None
     about: str | None
     nes_self: str | None
@@ -19,7 +18,6 @@ class Profile:
     @classmethod
     async def FromNesId(cls, nes_id: int) -> Profile:
         username = None
-        phone_number = None
         email = None
         about = None
         nes_self = None
@@ -33,9 +31,6 @@ class Profile:
                 username = tg
 
             if tg_user := await ctx.GetTgUser(chat_id=chat_id):
-                if tg_user.phone_number:
-                    phone_number = tg_user.phone_number
-
                 if tg_user.about:
                     about = tg_user.about
 
@@ -54,7 +49,6 @@ class Profile:
         return cls(
             nes_id=nes_id,
             username=username,
-            phone_number=phone_number,
             email=email,
             about=about,
             nes_self=nes_self,
@@ -66,9 +60,8 @@ class Profile:
         text += f"{self.nes_self}\n\n" if self.nes_self else ""
 
         text += f"@{self.username}\n" if self.username else ""
-        text += f"{self.phone_number}\n" if self.phone_number else ""
         text += f"{self.email}\n" if self.email else ""
-        text += "\n" if self.username or self.phone_number or self.email else ""
+        text += "\n" if self.username or self.email else ""
 
         text += f"About:\n{self.about}\n\n" if self.about else ""
 

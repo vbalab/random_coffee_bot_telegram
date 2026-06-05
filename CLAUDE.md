@@ -219,7 +219,6 @@ core/configs ←── everywhere (settings, paths, admin_store)
 | `nes_id` | BigInteger | NES profile link, indexed, nullable. **Plain column, NOT a DB foreign key** — deleting a NesUser row does not cascade. |
 | `nes_email` | String | indexed |
 | `username` | String | Telegram @handle, indexed |
-| `phone_number` | String | indexed |
 | `language` | String | "en" or "ru" |
 | `about` | String | Free-form bio |
 | `panel_message_id` | BigInteger | Last active hub message ID (for single-instance hub) |
@@ -297,8 +296,8 @@ Stores every bot↔user message exchange with timestamp and side (`Bot`/`User` e
 /start
   └─ if no language set → state: ChooseLanguage → reply keyboard EN/RU → SetUserLanguage()
   └─ if already verified → SendHub(chat_id) immediately
-  └─ state: GetPhoneNumber  → request contact share → store phone
-  └─ state: EmailGet        → free-text email input (lowercased; must end with @nes.ru;
+  └─ state: EmailGet        → (asked straight after language/start — no phone step)
+                              free-text email input (lowercased; must end with @nes.ru;
                               cooldown after 3 wrong codes; rejects emails already
                               owned by a verified user)
                               → ResolveNesUserByEmail(email): DB-first lookup in the
