@@ -15,6 +15,7 @@ from nespresso.bot.handlers.admin.commands.back import (
     BackToHubCallbackData,
 )
 from nespresso.bot.handlers.admin.commands.blocking import ShowBlockingPanel
+from nespresso.bot.handlers.admin.commands.logs import ShowLogsPanel
 from nespresso.bot.handlers.admin.commands.matching import (
     ShowMatchingPanel,
 )
@@ -27,12 +28,10 @@ from nespresso.bot.lib.message.i18n import GetUserLanguage, t
 from nespresso.bot.lib.message.io import (
     ContextIO,
     PersonalMsg,
-    SendDocument,
     SendMessage,
     SendMessagesToGroup,
 )
 from nespresso.bot.lifecycle.creator import bot
-from nespresso.core.configs.paths import PATH_BOT_LOGS
 from nespresso.db.models.tg_user import TgUser
 from nespresso.db.services.user_context import GetUserContextService
 
@@ -166,10 +165,7 @@ async def PanelBack(callback_query: types.CallbackQuery, state: FSMContext) -> N
 async def PanelLogs(callback_query: types.CallbackQuery) -> None:
     assert isinstance(callback_query.message, types.Message)
     await callback_query.answer()
-    await SendDocument(
-        chat_id=callback_query.message.chat.id,
-        document=types.FSInputFile(PATH_BOT_LOGS),
-    )
+    await ShowLogsPanel(callback_query.message.chat.id)
 
 
 # --- Matching ---

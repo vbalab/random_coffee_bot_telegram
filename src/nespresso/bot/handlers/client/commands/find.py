@@ -113,7 +113,7 @@ async def CommandFindText(message: types.Message, state: FSMContext) -> None:
 
     await SendMessage(
         chat_id=message.chat.id,
-        text=page.GetFormattedText(),
+        text=search.CurrentText(),
         reply_markup=FindKeyboard(
             search_id=search_id, next=search.CanScrollFurtherForward()
         ),
@@ -163,7 +163,7 @@ async def CommandFindCallback(
         next=search.CanScrollFurtherForward(),
     )
 
-    text = page.GetFormattedText()
+    text = search.CurrentText()
     logging.info(
         f"chat_id={callback_query.from_user.id}  (scroll)  << {text!r}"
     )

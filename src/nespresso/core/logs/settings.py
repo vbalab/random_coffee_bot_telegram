@@ -15,6 +15,31 @@ logging.getLogger("opensearch").setLevel(logging.INFO)
 logging.getLogger("filelock").setLevel(logging.INFO)
 logging.getLogger("apscheduler.scheduler").setLevel(logging.INFO)
 
+
+class _DemoteSuccessfulHttpx(logging.Filter):
+    """
+    httpx logs every request at INFO ('HTTP Request: ... "HTTP/1.1 200 OK"').
+    Successful (2xx) responses are noise — demote them to DEBUG so they stay out
+    of the INFO console but remain in the DEBUG file log. Non-2xx requests keep
+    their INFO level so real failures stay visible.
+
+    Attached to the `httpx` logger (not a handler) so the level change happens
+    before the QueueListener's per-handler level check.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        status = next(
+            (a for a in record.args if isinstance(a, int) and 100 <= a < 600),
+            None,
+        ) if isinstance(record.args, tuple) else None
+        if status is not None and 200 <= status < 300:
+            record.levelno = logging.DEBUG
+            record.levelname = "DEBUG"
+        return True
+
+
+logging.getLogger("httpx").addFilter(_DemoteSuccessfulHttpx())
+
 _CONSOLE_FORMAT = ColoredFormatter(
     "%(log_color)s%(levelname)-8s%(reset)s :: %(asctime)s.%(msecs)03d :: %(message)s",
     datefmt="%m-%d %H:%M:%S",
@@ -32,6 +57,13 @@ _FILE_FORMAT = JsonFormatter(
     fmt="%(levelname)s %(asctime)s %(message)s %(name)s %(filename)s %(lineno)d",
     json_ensure_ascii=False,
     json_indent=4,
+)
+
+# "Quick" logs: the same concise layout as the colored console, but plain (no ANSI)
+# so the downloaded file is readable. Written to its own file at INFO.
+_QUICK_FILE_FORMAT = logging.Formatter(
+    "%(levelname)-8s :: %(asctime)s.%(msecs)03d :: %(message)s",
+    datefmt="%m-%d %H:%M:%S",
 )
 
 
@@ -59,7 +91,10 @@ class RemoveColorCodesFilter(logging.Filter):
 
 
 def CreateFileHandler(
-    path: Path, level: int, filters: list[logging.Filter] | None = None
+    path: Path,
+    level: int,
+    filters: list[logging.Filter] | None = None,
+    formatter: logging.Formatter | None = None,
 ) -> TimedRotatingFileHandler:
     handler = TimedRotatingFileHandler(
         filename=path,
@@ -70,7 +105,7 @@ def CreateFileHandler(
         utc=True,
     )
     handler.setLevel(level)
-    handler.setFormatter(_FILE_FORMAT)
+    handler.setFormatter(formatter if formatter is not None else _FILE_FORMAT)
 
     handler.addFilter(RemoveColorCodesFilter())
 
@@ -79,6 +114,13 @@ def CreateFileHandler(
             handler.addFilter(filt)
 
     return handler
+
+
+def CreateQuickFileHandler(
+    path: Path, level: int, filters: list[logging.Filter] | None = None
+) -> TimedRotatingFileHandler:
+    """File handler mirroring the console layout (plain, no ANSI), for 'quick' logs."""
+    return CreateFileHandler(path, level, filters, _QUICK_FILE_FORMAT)
 
 
 def CreateConsoleHandler(

@@ -67,6 +67,11 @@
   "admin.button_back": "⬅️ Back",
   "admin.button_back_hub": "🏠 Hub",
 
+  "admin.logs_header": "📋 Logs\n\nDownload the bot logs:\n\n• ⚡ Quick — concise terminal-style logs (INFO)\n• 🐛 Debug — full structured logs (DEBUG)",
+  "admin.logs_button_quick": "⚡ Quick logs",
+  "admin.logs_button_debug": "🐛 Debug logs",
+  "admin.logs_not_found": "❌ No log file yet.",
+
   "admin.broadcast_enter_text": "Input text of message to broadcast:",
   "admin.broadcast_done": "✅ Broadcast sent",
   "admin.messages_enter_args": "Enter username and message limit (e.g. \"@vbalab 15\"):",
@@ -128,7 +133,11 @@
 
   "admin.matching_header": "⚙️ Matching Panel\n\nRun a new matching round or request feedback from the last round.",
   "admin.matching_button_run": "▶️ Run Matching Now",
+  "admin.matching_button_demo": "🧪 Demo Matching",
   "admin.matching_button_feedback": "📊 Send Feedback Request",
+  "admin.matching_demo_running": "🧪 Building a demo matching… (dry run — nobody is notified)",
+  "admin.matching_demo_empty": "No eligible users to match right now.",
+  "admin.matching_demo_done": "✅ Demo matching ready — {users} users, {pairs} pairs. No round was saved and no notifications were sent. See the attached Excel.",
   "admin.matching_running": "⏳ Running matching… please wait.",
   "admin.matching_done": "✅ Matching complete. {count} users received matches.",
   "admin.matching_failed": "❌ Matching failed. Check logs.",
@@ -137,8 +146,9 @@
   "admin.matching_no_assignments": "No assignments found in the last round.",
   "admin.matching_feedback_sent": "✅ Feedback requests sent for {count} assignments.",
 
-  "matching.intro": "👋 Hi! You've been matched with {count} person(s) this round. Here are their profiles:",
-  "matching.feedback_question": "Did you meet with {name}?",
+  "matching.intro": "👋 Hi! This is NESpresso — the New Economic School alumni networking bot you registered with.\n\nEvery so often we run a matching round: alumni get paired up to meet — a coffee, a call, whatever works. A new round just started, and we picked {count} fellow alum for you.\n\nI'll send their profile(s) in the next message(s). Take a look and feel free to reach out to set something up. ☕️",
+  "matching.feedback_question": "👋 Hi! A quick follow-up on your last NESpresso matching round — were you able to connect with {name}?",
+  "matching.your_match": "your match",
   "matching.feedback_met": "✅ Yes",
   "matching.feedback_not_met": "❌ No",
   "matching.feedback_planning": "📅 Planning to",

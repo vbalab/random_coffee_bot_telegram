@@ -77,6 +77,13 @@ async def SendHub(chat_id: int) -> None:
     if old_id is not None:
         try:
             await bot.delete_message(chat_id=chat_id, message_id=old_id)
+        except TelegramBadRequest as e:
+            # Expected & harmless: the old hub is already gone, or older than
+            # Telegram's 48h delete window. One clean line, no traceback.
+            logging.warning(
+                f"Old hub message not deleted (chat_id={chat_id} "
+                f"message_id={old_id}): {e.message}"
+            )
         except Exception:
             logging.warning(
                 f"Failed to delete old hub message for chat_id={chat_id} message_id={old_id}",

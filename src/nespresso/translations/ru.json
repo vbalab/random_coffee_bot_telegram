@@ -67,6 +67,11 @@
   "admin.button_back": "⬅️ Назад",
   "admin.button_back_hub": "🏠 Главная",
 
+  "admin.logs_header": "📋 Логи\n\nСкачать логи бота:\n\n• ⚡ Quick — краткие логи как в терминале (INFO)\n• 🐛 Debug — полные структурированные логи (DEBUG)",
+  "admin.logs_button_quick": "⚡ Логи Quick",
+  "admin.logs_button_debug": "🐛 Логи Debug",
+  "admin.logs_not_found": "❌ Файла логов пока нет.",
+
   "admin.broadcast_enter_text": "Введите текст сообщения для рассылки:",
   "admin.broadcast_done": "✅ Рассылка отправлена",
   "admin.messages_enter_args": "Введите имя пользователя и лимит сообщений (например, \"@vbalab 15\"):",
@@ -128,7 +133,11 @@
 
   "admin.matching_header": "⚙️ Панель матчинга\n\nЗапустите новый раунд матчинга или запросите обратную связь по последнему раунду.",
   "admin.matching_button_run": "▶️ Запустить матчинг",
+  "admin.matching_button_demo": "🧪 Демо-матчинг",
   "admin.matching_button_feedback": "📊 Запросить обратную связь",
+  "admin.matching_demo_running": "🧪 Готовлю демо-матчинг… (черновой прогон — никому не отправляются уведомления)",
+  "admin.matching_demo_empty": "Сейчас нет подходящих пользователей для матчинга.",
+  "admin.matching_demo_done": "✅ Демо-матчинг готов — {users} пользователей, {pairs} пар. Раунд не сохранён, уведомления не отправлялись. Подробности — в приложенном Excel.",
   "admin.matching_running": "⏳ Запускаю матчинг… пожалуйста, подождите.",
   "admin.matching_done": "✅ Матчинг завершён. {count} пользователей получили пары.",
   "admin.matching_failed": "❌ Матчинг завершился с ошибкой. Проверьте логи.",
@@ -137,8 +146,9 @@
   "admin.matching_no_assignments": "В последнем раунде не найдено назначений.",
   "admin.matching_feedback_sent": "✅ Запросы обратной связи отправлены для {count} назначений.",
 
-  "matching.intro": "👋 Привет! В этом раунде тебе назначено {count} человек(а). Вот их профили:",
-  "matching.feedback_question": "Вы встретились с {name}?",
+  "matching.intro": "👋 Привет! Это NESpresso — бот для нетворкинга выпускников РЭШ, в котором ты регистрировался(ась).\n\nВремя от времени мы устраиваем раунды знакомств: подбираем выпускников друг другу для встречи — кофе, созвон, как удобно. Только что начался новый раунд, и мы выбрали для тебя {count} выпускник(ов).\n\nИх профиль(и) пришлю следующими сообщениями. Посмотри и смело напиши им, чтобы договориться. ☕️",
+  "matching.feedback_question": "👋 Привет! Небольшой вопрос по прошлому раунду знакомств NESpresso — удалось ли тебе пообщаться с {name}?",
+  "matching.your_match": "твоей парой",
   "matching.feedback_met": "✅ Да",
   "matching.feedback_not_met": "❌ Нет",
   "matching.feedback_planning": "📅 Планирую",

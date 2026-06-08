@@ -32,49 +32,21 @@ _FETCH_SIZE = (
 )
 _KNN_LIMIT = 30
 _SCORE_THRESHOLD = 0.1  # drop semantic-only results below this normalized score
-_DISPLAY_LIMIT = 50  # max results materialized into pages per search
+_DISPLAY_LIMIT = 30  # pages materialized per chunk; more load as the user scrolls
+_EXPANSION_BOOST = 0.25  # world-knowledge query expansion: a gentle recall nudge only
 
 
 @dataclass
 class Page:
-    scroll_id: str
-    score: float
     number: int
     profile: Profile
-    total: int = 0
-    capped: bool = False  # True when more than `total` candidates matched
-    final_text: str | None = None
+    _body: str | None = None
 
-    @classmethod
-    async def _FromHit(cls, hit: dict[Any, Any], scroll_id: str, number: int) -> Page:
-        nes_id = int(hit["_id"])
-        return cls(
-            scroll_id=scroll_id,
-            score=float(hit["_score"]),
-            number=number,
-            profile=await Profile.FromNesId(nes_id),
-        )
-
-    @classmethod
-    async def BatchFromResponse(
-        cls,
-        response: dict[Any, Any],
-        start_number: int,
-    ) -> list[Page]:
-        hits = response["hits"]["hits"]
-        pages = []
-        for i, hit in enumerate(hits):
-            page = await cls._FromHit(hit, scroll_id="", number=start_number + i)
-            pages.append(page)
-        return pages
-
-    def GetFormattedText(self) -> str:
-        if not self.final_text:
-            denom = f"{self.total}+" if self.capped else str(self.total)
-            label = f"[Page: {self.number + 1} / {denom}]"
-            self.final_text = f"`{label}`\n\n{self.profile.DescribeProfile()}"
-
-        return self.final_text
+    def GetProfileText(self) -> str:
+        """Profile body (without the page-counter label — that is rendered live)."""
+        if self._body is None:
+            self._body = self.profile.DescribeProfile()
+        return self._body
 
 
 class ScrollingSearch:
@@ -82,23 +54,35 @@ class ScrollingSearch:
         self.pages: list[Page] = []
         self.index: int = 0
         self._exclude_nes_id = exclude_nes_id
+        # Full ranked nes_id list (reranked top chunk + re-score tail). Pages are
+        # materialized lazily, _DISPLAY_LIMIT at a time, as the user scrolls.
+        self._order_ids: list[int] = []
+        # True when OpenSearch retrieval hit its size cap, so MORE matching
+        # profiles may exist beyond the pool (shown to the user as "N+").
+        self._pool_capped: bool = False
 
     def _SemanticBody(
-        self, semantic: str, keywords: str, embedding: list[float]
+        self, semantic: str, keywords: str, expanded: str, embedding: list[float]
     ) -> dict[Any, Any]:
-        """Hybrid BM25 + KNN retrieval on the cleaned semantic query."""
+        """Hybrid BM25 + KNN retrieval on the cleaned semantic query.
+
+        The query-side world-knowledge `expanded` terms ride a separate, heavily
+        down-weighted should-clause (`_EXPANSION_BOOST`): they widen *lexical*
+        recall for narrow queries without letting world-knowledge tokens outvote
+        the actual query. The embedding stays on the clean semantic text.
+        """
 
         def _text_query(field: str) -> dict[Any, Any]:
+            should: list[dict[Any, Any]] = [{"match": {field: {"query": semantic}}}]
             if keywords:
-                return {
-                    "bool": {
-                        "should": [
-                            {"match": {field: {"query": semantic}}},
-                            {"match": {field: {"query": keywords, "boost": 0.5}}},
-                        ]
-                    }
-                }
-            return {"match": {field: semantic}}
+                should.append({"match": {field: {"query": keywords, "boost": 0.5}}})
+            if expanded:
+                should.append(
+                    {"match": {field: {"query": expanded, "boost": _EXPANSION_BOOST}}}
+                )
+            if len(should) == 1:
+                return {"match": {field: semantic}}
+            return {"bool": {"should": should}}
 
         hybrid_query: dict[str, Any] = {
             "queries": [
@@ -189,30 +173,49 @@ class ScrollingSearch:
 
         text = message.text
         parsed = await ParseQuery(text)  # fallback-safe (raw text on failure)
+        if not parsed.is_valid_search:
+            # Non-bona-fide query (slur / abusive / not a real people search) —
+            # surfaced to the user as a plain "nothing found".
+            logging.info(
+                f"chat_id={message.chat.id} :: query rejected by moderation: {text!r}"
+            )
+            return None
         filters = parsed.filters
         semantic = parsed.semantic_query.strip() or text
         keywords = ExtractKeywords(semantic)
+        expanded = parsed.expanded_terms if settings.QUERY_EXPANSION_ENABLED else ""
         embedding = CreateEmbedding(semantic)
 
         logging.info(
             f"chat_id={message.chat.id} :: query='{text}' semantic='{semantic}' "
-            f"keywords='{keywords}'"
+            f"keywords='{keywords}' expanded='{expanded}'"
         )
 
         # Candidate pool: nes_id -> (base hybrid score, _source).
         pool: dict[int, tuple[float, dict[Any, Any]]] = {}
-        for hit in await self._Search(self._SemanticBody(semantic, keywords, embedding)):
+        sem_hits = await self._Search(
+            self._SemanticBody(semantic, keywords, expanded, embedding)
+        )
+        for hit in sem_hits:
             pool[int(hit["_id"])] = (float(hit["_score"]), hit.get("_source") or {})
 
+        struct_hits: list[dict[Any, Any]] = []
         struct_body = self._StructBody(filters)
         if struct_body is not None:
-            for hit in await self._Search(struct_body, use_pipeline=False):
+            struct_hits = await self._Search(struct_body, use_pipeline=False)
+            for hit in struct_hits:
                 nid = int(hit["_id"])
                 if nid not in pool:
                     pool[nid] = (0.0, hit.get("_source") or {})
 
         if not pool:
             return None
+
+        # If either retrieval filled its page, more matching profiles may exist
+        # beyond the pool — surfaced to the user as "N+".
+        self._pool_capped = (
+            len(sem_hits) >= _FETCH_SIZE or len(struct_hits) >= _FETCH_SIZE
+        )
 
         # Combine: structured matches dominate; hybrid score breaks ties. Keep a
         # candidate if it matches a filter (boost>0) or is semantically relevant.
@@ -224,9 +227,9 @@ class ScrollingSearch:
         if not scored:
             return None
         scored.sort(key=lambda x: x[0], reverse=True)
-        capped = len(scored) > _DISPLAY_LIMIT  # more matched than we materialize
-        scored = scored[:_DISPLAY_LIMIT]
 
+        # Rerank only the top window; the tail keeps re-score order. The full list
+        # is paginated lazily (a chunk of pages built on demand as the user scrolls).
         order_ids = [nid for _, nid, _ in scored]
         if settings.RERANK_ENABLED and len(scored) > 1:
             window = scored[: settings.RERANK_CANDIDATES]
@@ -236,22 +239,31 @@ class ScrollingSearch:
                 nid for _, nid, _ in scored[settings.RERANK_CANDIDATES :]
             ]
 
-        total = len(order_ids)
-        pages: list[Page] = [
-            Page(
-                scroll_id="",
-                score=0.0,
-                number=i,
-                total=total,
-                capped=capped,
-                profile=await Profile.FromNesId(nid),
-            )
-            for i, nid in enumerate(order_ids)
-        ]
-        if not pages:
+        self._order_ids = order_ids
+        await self._MaterializeNextChunk()  # first _DISPLAY_LIMIT pages
+        if not self.pages:
             return None
-        self.pages = pages
+        self.index = 0
         return self._CurrentPage()
+
+    async def _MaterializeNextChunk(self) -> None:
+        """Build the next _DISPLAY_LIMIT pages from the ranked id list (lazy)."""
+        start = len(self.pages)
+        for nes_id in self._order_ids[start : start + _DISPLAY_LIMIT]:
+            self.pages.append(
+                Page(number=len(self.pages), profile=await Profile.FromNesId(nes_id))
+            )
+
+    def _Denominator(self) -> str:
+        loaded = len(self.pages)
+        more = len(self._order_ids) > loaded or self._pool_capped
+        return f"{loaded}+" if more else str(loaded)
+
+    def CurrentText(self) -> str:
+        """Render the current page with a live page counter (n / loaded[+])."""
+        page = self.pages[self.index]
+        label = f"[Page: {page.number + 1} / {self._Denominator()}]"
+        return f"`{label}`\n\n{page.GetProfileText()}"
 
     def CanScrollFurtherBackward(self) -> bool:
         return self.index > 0
@@ -265,20 +277,23 @@ class ScrollingSearch:
         return self._CurrentPage()
 
     def CanScrollFurtherForward(self) -> bool:
-        return self.index < len(self.pages) - 1
+        # A materialized next page exists, or another chunk can still be loaded.
+        return self.index < len(self.pages) - 1 or len(self._order_ids) > len(self.pages)
 
     async def ScrollForward(self) -> Page | None:
         if not self.pages:
             raise ValueError("HybridSearch() must be called before scrolling forward.")
 
         if self.index >= len(self.pages) - 1:
-            return None
+            if len(self._order_ids) <= len(self.pages):
+                return None  # nothing more was retrieved
+            await self._MaterializeNextChunk()
 
         self.index += 1
         return self._CurrentPage()
 
     async def FinishScrolling(self) -> None:
-        pass  # No scroll context to clear; all results fetched upfront
+        pass  # No scroll context to clear; the candidate pool is held in memory.
 
 
 SEARCHES: TTLCache[uuid.UUID, ScrollingSearch] = TTLCache(

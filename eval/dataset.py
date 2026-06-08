@@ -234,6 +234,21 @@ QUERIES: list[EvalQuery] = [
         "I'm looking for someone who can advise on venture capital fundraising",
         "phrasing", lambda r: pe(r, "Венчурные инвестиции")),
 
+    # --- narrow / abbreviation (stresses query-side world-knowledge expansion) ---
+    EvalQuery("narrow_hft", "HFT", "narrow",
+              lambda r: pe(r, "Алготрейдинг", "Трейдинг")),
+    EvalQuery("narrow_mna", "M&A", "narrow",
+              lambda r: pe(r, "Слияния и поглощения")),
+    EvalQuery("narrow_vc", "венчур", "narrow",
+              lambda r: pe(r, "Венчурные инвестиции")),
+    EvalQuery("narrow_ml", "ML", "narrow",
+              lambda r: pe(r, "Машинное обучение", "Анализ данных")),
+    EvalQuery("narrow_consult", "консалтинг", "narrow",
+              lambda r: pe(r, "Стратегический консалтинг", "Финансовый консалтинг",
+                           "IT-консалтинг")),
+    EvalQuery("narrow_startup", "стартапы", "narrow",
+              lambda r: pe(r, "Стартапы и инновации", "Предпринимательство")),
+
     EvalQuery(
         "mae2002", "Выпускников мужчин программы МАЭ 2002", "unsupported",
         lambda r: False,

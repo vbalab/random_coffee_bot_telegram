@@ -74,6 +74,7 @@ async def Rerank(query: str, candidates: list[tuple[int, str]]) -> list[int]:
         ).messages.create(
             model=settings.RERANK_MODEL,
             max_tokens=600,
+            temperature=0,  # deterministic ranking (reproducible, lower variance)
             system=_SYSTEM,
             messages=[{"role": "user", "content": user}],
             output_config={"format": {"type": "json_schema", "schema": _SCHEMA}},

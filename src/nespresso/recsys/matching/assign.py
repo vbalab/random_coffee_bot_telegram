@@ -1,13 +1,18 @@
+import asyncio
 import logging
 import random
 
+from aiolimiter import AsyncLimiter
 from sqlalchemy import select
 
 from nespresso.bot.lib.message.i18n import GetUserLanguage, t
-from nespresso.bot.lib.message.io import PersonalMsg, SendMessagesToGroup
+from nespresso.bot.lib.message.io import SendMessage
 from nespresso.db.models.nes_user import NesUser
 from nespresso.db.models.tg_user import TgUser
-from nespresso.db.services.user_context import GetUserContextService
+from nespresso.db.services.user_context import (
+    GetUserContextService,
+    UserContextService,
+)
 from nespresso.recsys.profile import Profile
 
 _MIN_USERS_FOR_MATCHING = 2
@@ -82,19 +87,14 @@ def MatchUsers(
     return result
 
 
-async def CreateMatching(triggered_by: int) -> dict[int, list[int]]:
+async def _EligibleChatIds(ctx: UserContextService) -> list[int]:
     """
-    Fetches eligible users, runs asymmetric matching, saves to DB.
-    Returns dict[assigner_chat_id -> list[assigned_chat_ids]].
+    Verified, non-blocked, non-opted-out users whose linked NES profile is still
+    listed in the MyNES directory (delisted users opted out of discoverability).
+    The `IN (listed nes_ids)` subquery also implies nes_id IS NOT NULL.
     """
-    ctx = await GetUserContextService()
-
-    # Only verified, non-blocked, non-opted-out users whose linked NES profile
-    # is still listed in the MyNES directory (delisted users are excluded — they
-    # opted out of being discoverable). The `IN (listed nes_ids)` subquery also
-    # implies nes_id IS NOT NULL.
     listed_nes_ids = select(NesUser.nes_id).where(NesUser.listed.is_(True))
-    all_users = await ctx.GetTgUsersOnCondition(
+    return await ctx.GetTgUsersOnCondition(
         condition=TgUser.verified
         & ~TgUser.blocked
         & ~TgUser.matching_paused
@@ -102,6 +102,14 @@ async def CreateMatching(triggered_by: int) -> dict[int, list[int]]:
         column=TgUser.chat_id,
     )
 
+
+async def CreateMatching(triggered_by: int) -> dict[int, list[int]]:
+    """
+    Fetches eligible users, runs asymmetric matching, saves to DB.
+    Returns dict[assigner_chat_id -> list[assigned_chat_ids]].
+    """
+    ctx = await GetUserContextService()
+    all_users = await _EligibleChatIds(ctx)
     excluded = await ctx.GetRecentExcludedPairs(last_n_rounds=2)
     assignments_map = MatchUsers(all_users, excluded)
 
@@ -122,37 +130,57 @@ async def CreateMatching(triggered_by: int) -> dict[int, list[int]]:
     return assignments_map
 
 
-async def SendMatchingInfo(assignments_map: dict[int, list[int]]) -> None:
+async def DemoMatching() -> dict[int, list[int]]:
+    """
+    Dry-run matching: compute assignments over the SAME eligible pool + history
+    exclusions as a real round, but do NOT persist a round and do NOT notify
+    anyone. For admin preview/export only.
+    """
     ctx = await GetUserContextService()
-    messages: list[PersonalMsg] = []
+    all_users = await _EligibleChatIds(ctx)
+    excluded = await ctx.GetRecentExcludedPairs(last_n_rounds=2)
+    return MatchUsers(all_users, excluded)
 
-    for assigner_chat_id, assigned_list in assignments_map.items():
+
+async def SendMatchingInfo(assignments_map: dict[int, list[int]]) -> None:
+    """
+    DM each matched user an explanatory greeting followed by ONE message per
+    assigned profile (so a user gets up to 3 messages: greeting + 2 profiles)
+    instead of a single blob. Per user the greeting is sent before the profiles
+    (sequential); different users are sent concurrently under one 30 msg/s limit.
+    """
+    ctx = await GetUserContextService()
+    limiter = AsyncLimiter(max_rate=30, time_period=1)
+
+    async def _SendToUser(assigner_chat_id: int, assigned_list: list[int]) -> None:
         lang = await GetUserLanguage(assigner_chat_id)
-        count = len(assigned_list)
-        if count == 0:
-            continue
 
-        intro = t(lang, "matching.intro", count=count)
-        parts = [intro]
-
+        # Ordered texts: greeting first, then one message per assigned profile.
+        texts: list[str] = [t(lang, "matching.intro", count=len(assigned_list))]
         for assigned_chat_id in assigned_list:
             assigned_nes_id = await ctx.GetTgUser(
-                chat_id=assigned_chat_id,
-                column=TgUser.nes_id,
+                chat_id=assigned_chat_id, column=TgUser.nes_id
             )
             if assigned_nes_id is None:
                 logging.error(
                     f"chat_id={assigned_chat_id} has no nes_id during SendMatchingInfo"
                 )
                 continue
-
             profile = await Profile.FromNesId(assigned_nes_id)
-            parts.append(profile.DescribeProfile())
+            texts.append(profile.DescribeProfile())
 
-        text = "\n\n---\n\n".join(parts)
-        messages.append(PersonalMsg(chat_id=assigner_chat_id, text=text))
+        # Sequential send → the greeting reliably arrives before the profiles.
+        for text in texts:
+            async with limiter:
+                await SendMessage(chat_id=assigner_chat_id, text=text)
 
-    await SendMessagesToGroup(messages)
+    await asyncio.gather(
+        *(
+            _SendToUser(assigner_chat_id, assigned_list)
+            for assigner_chat_id, assigned_list in assignments_map.items()
+            if assigned_list
+        )
+    )
 
 
 async def MatchingPipeline(triggered_by: int) -> int:

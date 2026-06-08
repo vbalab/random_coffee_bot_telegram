@@ -38,6 +38,7 @@ from nespresso.recsys.searching.document import (
 )
 from nespresso.recsys.searching.filtering import StructuredFields
 from nespresso.recsys.searching.index import EnsureOpenSearchIndex
+from nespresso.recsys.searching.llm.enrich import EnrichTexts
 from nespresso.recsys.searching.preprocessing.embedding import CreateEmbeddings
 
 # How many profiles to embed + index per batch. Bounds peak memory (each batch
@@ -45,9 +46,10 @@ from nespresso.recsys.searching.preprocessing.embedding import CreateEmbeddings
 _EMBED_BATCH = 256
 
 # Bump to force a one-off full re-index (new doc text shape, new structured
-# fields, etc.): it is folded into the content hash, so every stored hash
-# mismatches and the next sync re-embeds + rewrites every profile.
-_DOC_VERSION = "2"
+# fields, enrichment, etc.): it is folded into the content hash, so every stored
+# hash mismatches and the next sync re-embeds + rewrites every profile.
+# v3: index-time world-knowledge enrichment before embedding.
+_DOC_VERSION = "3"
 
 # Columns written verbatim from the feed to `nes_user`. `nes_email`, `created_at`
 # are omitted (preserved across syncs). `program`, `class_name` are ALSO omitted:
@@ -209,16 +211,20 @@ async def _RunSync(report: SyncReport) -> None:
         changed = [nid for nid in fresh_ids if new_hashes[nid] != old_hashes.get(nid)]
     report.changed = len(changed)
 
-    # Embed + index only changed profiles, batch by batch (embedding off-thread).
+    # Embed + index only changed profiles, batch by batch. Each batch is first
+    # enriched with world-knowledge context (off the search hot path), then the
+    # ENRICHED text is what we embed + index, so indirect queries (e.g. "HFT"
+    # matching an "XTX" profile) retrieve correctly.
     texts = {nid: models[nid].SearchText() for nid in changed}
     failed_index: set[int] = set()
     for batch_start in range(0, len(changed), _EMBED_BATCH):
         batch = changed[batch_start : batch_start + _EMBED_BATCH]
         batch_texts = [texts[nid] for nid in batch]
-        embeddings = await asyncio.to_thread(CreateEmbeddings, batch_texts)
+        enriched = await EnrichTexts(batch_texts)
+        embeddings = await asyncio.to_thread(CreateEmbeddings, enriched)
         items = [
-            (nid, texts[nid], embedding, StructuredFields(models[nid]))
-            for nid, embedding in zip(batch, embeddings, strict=True)
+            (nid, enriched[i], embeddings[i], StructuredFields(models[nid]))
+            for i, nid in enumerate(batch)
         ]
         failed = await BulkUpsertMynesOpenSearch(items)
         failed_index |= failed

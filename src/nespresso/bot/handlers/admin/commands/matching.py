@@ -8,10 +8,13 @@ from aiogram.filters.callback_data import CallbackData
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from nespresso.bot.handlers.admin.commands.back import BackToAdminPanelCallbackData
+from nespresso.bot.lib.message.file import SendTemporaryXlsxFile
 from nespresso.bot.lib.message.i18n import GetUserLanguage, t
 from nespresso.bot.lib.message.io import PersonalMsg, SendMessage, SendMessagesToGroup
 from nespresso.core.configs.admin_store import GetAdminIds
+from nespresso.db.models.tg_user import TgUser
 from nespresso.db.services.user_context import GetUserContextService
+from nespresso.recsys.matching.assign import DemoMatching
 from nespresso.recsys.matching.schedule import RunMatching
 
 router = Router()
@@ -19,6 +22,7 @@ router = Router()
 
 class MatchingAction(str, Enum):
     Run = "run"
+    Demo = "demo"
     Feedback = "feedback"
 
 
@@ -43,6 +47,14 @@ def MatchingKeyboard(lang: str) -> InlineKeyboardMarkup:
                     text=t(lang, "admin.matching_button_run"),
                     callback_data=MatchingCallbackData(
                         action=MatchingAction.Run
+                    ).pack(),
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=t(lang, "admin.matching_button_demo"),
+                    callback_data=MatchingCallbackData(
+                        action=MatchingAction.Demo
                     ).pack(),
                 )
             ],
@@ -116,6 +128,101 @@ async def CommandMatchingRun(callback_query: types.CallbackQuery) -> None:
         await SendMessage(chat_id=chat_id, text=t(lang, "admin.matching_failed"))
 
 
+async def _DemoLabel(ctx: Any, chat_id: int) -> tuple[str, str]:
+    """(@username, NES name) for the demo-matching export."""
+    username = ""
+    try:
+        from nespresso.bot.lib.chat.username import GetTgUsername
+
+        handle = await GetTgUsername(chat_id)
+        if handle:
+            username = f"@{handle}"
+    except Exception:
+        logging.debug(f"demo: no username for chat_id={chat_id}", exc_info=True)
+
+    name = ""
+    nes_id = await ctx.GetTgUser(chat_id, TgUser.nes_id)
+    if nes_id:
+        nes_user = await ctx.GetNesUser(nes_id)
+        if nes_user and nes_user.name:
+            name = nes_user.name
+
+    return username, name
+
+
+async def _DisplayName(ctx: Any, chat_id: int, lang: str) -> str:
+    """
+    A user-facing name for a matched user: prefer the @username, fall back to
+    their NES profile name, and only then to a generic label. NEVER returns the
+    raw telegram chat_id — that must not be shown to users.
+    """
+    try:
+        from nespresso.bot.lib.chat.username import GetTgUsername
+
+        handle = await GetTgUsername(chat_id)
+        if handle:
+            return f"@{handle}"
+    except Exception:
+        logging.debug(f"no username for chat_id={chat_id}", exc_info=True)
+
+    nes_id = await ctx.GetTgUser(chat_id, TgUser.nes_id)
+    if nes_id:
+        nes_user = await ctx.GetNesUser(nes_id)
+        if nes_user and nes_user.name:
+            return nes_user.name
+
+    return t(lang, "matching.your_match")
+
+
+@router.callback_query(MatchingCallbackData.filter(F.action == MatchingAction.Demo))
+async def CommandMatchingDemo(callback_query: types.CallbackQuery) -> None:
+    assert isinstance(callback_query.message, types.Message)
+    await callback_query.answer()
+
+    chat_id = callback_query.from_user.id
+    lang = await GetUserLanguage(chat_id)
+
+    await SendMessage(chat_id=chat_id, text=t(lang, "admin.matching_demo_running"))
+
+    # Dry run: no DB round is saved and no user is notified.
+    assignments_map = await DemoMatching()
+    pairs = sorted(
+        (assigner, assigned)
+        for assigner, assigned_list in assignments_map.items()
+        for assigned in assigned_list
+    )
+    if not pairs:
+        await SendMessage(chat_id=chat_id, text=t(lang, "admin.matching_demo_empty"))
+        return
+
+    ctx = await GetUserContextService()
+    labels = {cid: await _DemoLabel(ctx, cid) for cid in {c for p in pairs for c in p}}
+
+    headers = [
+        "assigner_chat_id",
+        "assigner_username",
+        "assigner_name",
+        "assigned_chat_id",
+        "assigned_username",
+        "assigned_name",
+    ]
+    rows = [
+        [a, labels[a][0], labels[a][1], b, labels[b][0], labels[b][1]]
+        for a, b in pairs
+    ]
+    await SendTemporaryXlsxFile(
+        chat_id=chat_id,
+        sheets=[("demo_matching", headers, rows)],
+        filename="demo_matching",
+    )
+
+    participants = sum(1 for assigned in assignments_map.values() if assigned)
+    await SendMessage(
+        chat_id=chat_id,
+        text=t(lang, "admin.matching_demo_done", users=participants, pairs=len(pairs)),
+    )
+
+
 @router.callback_query(MatchingCallbackData.filter(F.action == MatchingAction.Feedback))
 async def CommandMatchingFeedback(callback_query: types.CallbackQuery) -> None:
     assert isinstance(callback_query.message, types.Message)
@@ -148,19 +255,7 @@ async def CommandMatchingFeedback(callback_query: types.CallbackQuery) -> None:
         user_lang = await GetUserLanguage(assigner_chat_id)
         for assignment in user_assignments:
             assigned_chat_id = assignment.assigned_chat_id
-            # Get a display name for the assigned user
-            display = str(assigned_chat_id)
-            try:
-                from nespresso.bot.lib.chat.username import GetTgUsername
-
-                username = await GetTgUsername(assigned_chat_id)
-                if username:
-                    display = f"@{username}"
-            except Exception:
-                logging.debug(
-                    f"Failed to get username for assigned chat_id={assigned_chat_id}",
-                    exc_info=True,
-                )
+            display = await _DisplayName(ctx, assigned_chat_id, user_lang)
 
             keyboard = InlineKeyboardMarkup(
                 inline_keyboard=[

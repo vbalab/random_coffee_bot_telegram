@@ -21,6 +21,7 @@
 | Search engine | OpenSearch 3.0 (BM25 + KNN vector + normalization pipeline) |
 | ML embeddings | Alibaba GTE multilingual (768-dim, via Sentence Transformers) |
 | Keyword extraction | KeyBERT |
+| Query understanding | Anthropic Claude Haiku 4.5 (parser: moderation + semantic + expansion + filters; reranker; index-time enrichment — all temperature 0, fallback-safe, prompt-cached) |
 | Email | aiosmtplib (Gmail SMTP) |
 | Config | Pydantic BaseSettings (.env) |
 | i18n | Custom JSON-based (EN, RU) |
@@ -134,12 +135,21 @@ src/nespresso/
 │   │   │   ├── model.py     # Load Alibaba GTE model (singleton)
 │   │   │   ├── embedding.py # CreateEmbedding(), CalculateTokenLen()
 │   │   │   └── keywords.py  # ExtractKeywords() via KeyBERT
+│   │   ├── llm/             # Claude-powered query understanding (Haiku 4.5, temperature 0)
+│   │   │   ├── client.py    # AsyncAnthropic singleton + CloseLLMClient()
+│   │   │   ├── world_knowledge.py # WORLD_KNOWLEDGE taxonomy shared by parser + enrich
+│   │   │   ├── query_understanding.py # ParseQuery() → is_valid_search (moderation) +
+│   │   │   │                 #   semantic_query + expanded_terms + filters; adaptive 1h
+│   │   │   │                 #   prompt caching + deterministic slur backstop
+│   │   │   ├── rerank.py    # Rerank() — compact ids-only reranker (fallback-safe)
+│   │   │   └── enrich.py    # EnrichTexts() — index-time world-knowledge expansion
 │   │   ├── client.py        # AsyncOpenSearch client + CloseOpenSearchClient()
-│   │   ├── index.py         # Index schema + EnsureOpenSearchIndex(), DocSide enum, DocAttr
+│   │   ├── index.py         # Index schema + EnsureOpenSearchIndex(), DocSide, structured f_* fields
+│   │   ├── filtering.py     # StructuredFields(), StructuredBoost(), CandidateCard() (structured pool)
 │   │   ├── search_pipeline.py # EnsureSearchPipeline() — normalization pipeline for hybrid search
 │   │   ├── document.py      # UpsertTextOpenSearch(), UpsertAboutOpenSearch(),
 │   │   │                    #   DeleteUserOpenSearch()
-│   │   └── search.py        # ScrollingSearch class + Page dataclass + SEARCHES TTLCache
+│   │   └── search.py        # ScrollingSearch: parser→2-pool retrieve→re-score→rerank, lazy paging
 │   └── matching/
 │       ├── assign.py        # MatchUsers(), CreateMatching(), SendMatchingInfo(),
 │       │                    #   MatchingPipeline() — core matching logic
@@ -369,12 +379,22 @@ Hub → "📝 My About"
 ```
 Find
   └─ state: Text   → user enters query text
-                     ExtractKeywords(text) → comma-separated keywords for BM25 boosting
-                     CreateEmbedding(text) → 768-dim vector
-                     HybridSearch via normalization pipeline (BM25 + KNN on mynes+cv fields)
-                     OpenSearch returns ranked + normalized results (score ≥ 0.1 threshold)
+                     ParseQuery(text)  [Claude Haiku, temperature 0, fallback-safe]
+                       → is_valid_search : moderation gate. False (slur / sexual /
+                         non-bona-fide like "плохой человек") ⇒ HybridSearch returns
+                         None ⇒ user sees a plain "Ничего не найдено" (find.not_found).
+                       → semantic_query  : cleaned intent → embedding + BM25
+                       → expanded_terms  : world-knowledge expansion (RU+EN), fed to a
+                         low-boost (0.25) BM25 channel; gated by QUERY_EXPANSION_ENABLED
+                       → filters         : structured constraints (program, city, company,
+                         role, university, industry/professional/country expertise …)
+                     Two-pool retrieve: hybrid semantic pool (BM25+KNN on mynes+cv) +
+                       structured pool (terms/match on f_* fields for filter-led queries)
+                     Re-score: STRUCT_WEIGHT * StructuredBoost + base hybrid score
+                     Rerank(text, top-30) [Claude Haiku, temperature 0] — anchors precision
+                       on the RAW query, so query expansion can widen recall safely
                      ScrollingSearch cached in SEARCHES TTLCache (5000 entries, 60 min)
-  └─ state: Forward → paginate with prev/next inline buttons
+  └─ state: Forward → paginate with prev/next inline buttons (lazy 30-per-chunk; "N+")
                       display NesUser profile for each result
 ```
 
@@ -587,8 +607,10 @@ Results are ranked via OpenSearch's normalization pipeline (`nespresso_normaliza
 - **Normalization:** min-max per sub-query
 - **Combination:** arithmetic mean with equal weights (0.25 each for 4 sub-queries)
 - Sub-queries: `mynes_text` (BM25), `cv_text` (BM25), `mynes_embedding` (KNN), `cv_embedding` (KNN)
-- BM25 queries are boosted by `ExtractKeywords(text)` extracted keywords
+- Each BM25 sub-query is a `bool/should` of: `semantic_query` (full weight) + `ExtractKeywords(semantic)` keywords (boost 0.5) + the parser's `expanded_terms` (boost 0.25)
 - Results below score threshold `0.1` are filtered out
+
+This hybrid (semantic) pool is unioned with a **structured pool** (`filtering.py`: `terms`/`match` over the indexed `f_*` fields) so filter-led queries with sparse semantic text (e.g. "кто работал в Сбербанке") still recall; candidates are then re-scored as `STRUCT_WEIGHT * StructuredBoost + base` and the top 30 reranked by `Rerank()`.
 
 `EnsureSearchPipeline()` (called at startup) creates this pipeline if it doesn't exist.
 
@@ -605,7 +627,23 @@ can_fwd = search.CanScrollFurtherForward()   # bool
 can_bwd = search.CanScrollFurtherBackward()  # bool
 ```
 
-**`Page` dataclass:** `scroll_id, score, number, profile, final_text` — lazy-formatted via `GetFormattedText()`.
+**`Page` dataclass:** `number, profile, _body` — profile text lazy-formatted via `GetProfileText()`; the page counter (`n / loaded[+]`) is rendered live by `CurrentText()`. Pages are materialized lazily in 30-per-chunk windows (`_DISPLAY_LIMIT`) as the user scrolls; a trailing `+` ("N+") means more matching profiles can still be loaded.
+
+### LLM Query Understanding & Reranking (`recsys/searching/llm/`)
+
+All three calls use **Claude Haiku 4.5 at temperature 0** (deterministic, reproducible), are **fallback-safe** (any error/timeout degrades to the pre-LLM behaviour), and never block search.
+
+**`ParseQuery(text)` → `ParsedQuery`** (`query_understanding.py`)
+- `is_valid_search` — **moderation gate**. `False` for slurs / sexual / abusive / non-bona-fide queries (incl. obfuscated & wrapped forms); the handler then returns a plain "nothing found" (`find.not_found`). Fail-open: only an explicit `False` blocks legitimate searches.
+- `semantic_query` — cleaned intent (drives the embedding + BM25).
+- `expanded_terms` — tight, category-only world-knowledge expansion (RU+EN, **no** employer names); fed to a 0.25-boost BM25 channel. Gated by `QUERY_EXPANSION_ENABLED` (eval-neutral; on by default).
+- `filters` — MyNES controlled-vocabulary constraints. `program` / `class_year` / `gender` are **forward-compatible**: extracted now, will light up when MyNES adds them to `/user/list`.
+- **Adaptive prompt caching:** the ~4.2k-token system prompt clears Haiku 4.5's 4096-token cache floor. A 1-hour `cache_control` is attached only once the rolling 60-min query count reaches `PARSER_CACHE_HOURLY_THRESHOLD` (5) — below that it is sent uncached (a 1h write costs 2× base input and only amortizes at ≥3 queries/hour).
+- **Deterministic backstop:** if the LLM call fails, a small high-precision slur regex still rejects the most egregious queries.
+
+**`Rerank(query, candidates)`** (`rerank.py`) — reorders the top `RERANK_CANDIDATES` (30) best-first against the **raw** query (compact ids-only output). Anchoring precision on the raw query is what lets `expanded_terms` widen recall safely. Identity fallback on any failure.
+
+**`EnrichTexts(texts)`** (`enrich.py`) — **index-time** world-knowledge expansion run during sync, before embedding: appends each profile's implicit industry / skills / domain terms (RU+EN) so a query for "HFT" matches an "XTX" profile. Shares the same `WORLD_KNOWLEDGE` taxonomy as the query-side parser, so both ends of the match speak one vocabulary. Bounded concurrency (`ENRICH_CONCURRENCY`); only re-runs on profiles whose `mynes_text_hash` changed.
 
 ---
 
@@ -650,9 +688,20 @@ POSTGRES_PORT=
 POSTGRES_DSN=            # assembled DSN for SQLAlchemy
 OPENSEARCH_INITIAL_ADMIN_PASSWORD=
 NES_API_BASE_URL=        # default: https://my.nes.ru/new-api-2
+
+# Anthropic Claude — query understanding for Find search (all default to Haiku 4.5)
+CLAUDE_API_KEY=                    # SecretStr
+QUERY_PARSER_MODEL=               # default claude-haiku-4-5
+QUERY_EXPANSION_ENABLED=          # default True — query-side world-knowledge expansion
+PARSER_CACHE_HOURLY_THRESHOLD=    # default 5 — rolling 60-min query count to enable 1h prompt cache
+RERANK_MODEL= / RERANK_ENABLED= / RERANK_CANDIDATES=   # default haiku-4-5 / True / 30
+ENRICH_MODEL= / ENRICH_ENABLED= / ENRICH_CONCURRENCY=  # index-time enrichment (haiku-4-5 / True / 8)
+LLM_TIMEOUT_SECONDS=              # default 8.0 (interactive parser/rerank)
+ENRICH_TIMEOUT_SECONDS=          # default 60.0 (background enrichment)
+MYNES_SYNC_INTERVAL_SECONDS=      # default 3600
 ```
 
-All secret fields (`TELEGRAM_BOT_TOKEN`, `EMAIL_ADDRESS`, `EMAIL_PASSWORD`) are `SecretStr`.
+All secret fields (`TELEGRAM_BOT_TOKEN`, `EMAIL_ADDRESS`, `EMAIL_PASSWORD`, `CLAUDE_API_KEY`) are `SecretStr`.
 
 ### Filesystem Paths (`core/configs/paths.py`)
 
@@ -873,6 +922,9 @@ The handlers for these are in `hub.py` (HubBack) and `admin.py` (PanelBack).
 - **User bio (about) indexing**: when a user saves their bio, `UpsertAboutOpenSearch(nes_id, about_text)` is called — it extracts keywords via KeyBERT, enriches the text, and upserts to the `cv` side of the OpenSearch document.
 - **OpenSearch deletes** (`DeleteUserOpenSearch`) swallow `NotFoundError`, since users may be unverified before they ever indexed a CV/about doc.
 - **Help requests**: users can request help via Settings → Help → "Ask for help"; this silently notifies all admins with the user's `@username` and `chat_id`.
+- **LLM Find search**: parser, reranker, and enrichment all run on Claude Haiku 4.5 at **temperature 0** (deterministic — same query → same result) and are **fallback-safe** (a flaky/slow Claude API degrades to raw-query hybrid search, never an error). `CLAUDE_API_KEY` is required for these; without it the calls fail and fall back.
+- **Search moderation never shows the raw query reason**: a rejected query (`is_valid_search=False`) is indistinguishable from "no results" so trolls get no signal; a deterministic slur regex backstops the LLM-down case.
+- **Find-search eval kit** lives in `eval/`: `dataset.py` (predicate-based gold materialized from the live `/user/list`), `run_opensearch.py` (authoritative A/B against the real pipeline — run inside the bot container with `eval/` + `src/` bind-mounted), and `run_moderation.py` (rejection recall / false-positive rate for the moderation gate). The parser + reranker are non-deterministic at temperature > 0, so eval at temperature 0 is what makes A/B deltas trustworthy.
 
 ---
 
@@ -905,3 +957,10 @@ The handlers for these are in `hub.py` (HubBack) and `admin.py` (PanelBack).
 | `DEFAULT_ADMIN_IDS` | Hard-coded chat_ids in `core/configs/admin_ids.py` that are always admins; cannot be removed at runtime |
 | `title_store` | JSON-backed per-language hub title overrides (`GetTitle`, `SetTitle`, `GetBothTitles`) used by the admin Title sub-panel |
 | `AdminFilter` | Aiogram filter applied to every admin router so only `is_admin=True` users can trigger admin handlers |
+| `ParseQuery` | Claude parser turning a query into `ParsedQuery(is_valid_search, semantic_query, expanded_terms, filters)` |
+| `is_valid_search` | Parser moderation flag; `False` ⇒ search returns a plain "nothing found" |
+| `expanded_terms` | Parser's query-side world-knowledge expansion (RU+EN), fed to a low-boost BM25 channel; gated by `QUERY_EXPANSION_ENABLED` |
+| `WORLD_KNOWLEDGE` | Shared employer→industry / role→skills taxonomy used by both the query parser and index-time `EnrichTexts` |
+| `Rerank` | Claude reranker that reorders the top-30 candidates against the raw query (temperature 0, fallback-safe) |
+| `EnrichTexts` | Index-time world-knowledge expansion of profile text before embedding (sync, `ENRICH_*` settings) |
+| `PARSER_CACHE_HOURLY_THRESHOLD` | Rolling 60-min query count at/above which the parser prompt gets a 1-hour `cache_control` (default 5) |

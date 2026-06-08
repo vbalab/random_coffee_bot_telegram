@@ -17,7 +17,9 @@ services:
     networks:
       - nespresso_network
     ports:
-      - "5432:5432"
+      # Localhost-only — not reachable from the network (the bot/api use the
+      # internal Docker network "nespresso_db").
+      - "127.0.0.1:5432:5432"
     volumes:
       - ./data/postgresql/data:/var/lib/postgresql/data
 
@@ -46,8 +48,12 @@ services:
     networks:
       - nespresso_network
     ports:
-      - "9200:9200"
-      - "9600:9600"
+      # Localhost-only: OpenSearch runs with security DISABLED, so it must never be
+      # reachable from the network — an exposed, unauthenticated instance gets its
+      # indices wiped by `DELETE /*` scanner bots. The bot/api reach it over the
+      # internal Docker network (host "nespresso_opensearch"), not this mapping.
+      - "127.0.0.1:9200:9200"
+      - "127.0.0.1:9600:9600"
     volumes:
       - ./data/recsys/opensearch/data:/usr/share/opensearch/data
 
