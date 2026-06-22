@@ -66,6 +66,45 @@ async def CountOpenSearchDocs() -> int:
     return int(result.get("count", 0))
 
 
+async def PresentDocIds() -> set[int]:
+    """
+    All nes_ids currently present as documents in the index (empty set if the
+    index is missing/empty).
+
+    Lets the directory sync self-heal a PARTIALLY-lost index: a profile the DB
+    records as indexed (its `mynes_text_hash` matches) but whose document is
+    actually missing here would otherwise be skipped forever by the hash check.
+    Scrolls so it is correct regardless of index size.
+    """
+    ids: set[int] = set()
+    try:
+        resp = await client.search(
+            index=INDEX_NAME,
+            body={"query": {"match_all": {}}, "_source": False, "size": 2000},
+            scroll="1m",
+        )
+    except NotFoundError:
+        return ids
+
+    scroll_id = resp.get("_scroll_id")
+    try:
+        hits = resp["hits"]["hits"]
+        while hits:
+            for hit in hits:
+                ids.add(int(hit["_id"]))
+            resp = await client.scroll(scroll_id=scroll_id, scroll="1m")
+            scroll_id = resp.get("_scroll_id")
+            hits = resp["hits"]["hits"]
+    finally:
+        if scroll_id:
+            try:
+                await client.clear_scroll(scroll_id=scroll_id)
+            except Exception:
+                logging.debug("clear_scroll failed (non-fatal).", exc_info=True)
+
+    return ids
+
+
 async def BulkUpsertMynesOpenSearch(
     items: list[tuple[int, str, list[float], dict[str, Any]]],
 ) -> set[int]:

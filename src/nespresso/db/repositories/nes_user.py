@@ -2,7 +2,7 @@ import logging
 from collections.abc import Iterable, Sequence
 from typing import Any, TypeVar, overload
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm.attributes import InstrumentedAttribute
@@ -16,7 +16,7 @@ from nespresso.db.repositories.checking import (
 T = TypeVar("T")
 
 # Bulk-write chunk sizes. Postgres/asyncpg caps a single statement at 32767
-# bound parameters; a sync row carries ~19 columns, so 500 rows ≈ 9.5k params.
+# bound parameters; a sync row carries ~23 columns, so 500 rows ≈ 11.5k params.
 _UPSERT_CHUNK = 500
 _SELECT_CHUNK = 1000
 
@@ -60,14 +60,22 @@ class NesUserRepository:
         Unlike `UpsertNesUsers`, this writes every supplied column verbatim —
         including ``None`` — so that a profile that lost work/education data
         (because the user revoked that flag) is overwritten rather than kept
-        stale. ``nes_email`` and ``created_at`` are intentionally NOT part of
-        `rows`, so they are preserved across syncs (the directory feed carries
-        no email).
+        stale. The caller decides which columns are in `rows`; ``created_at`` is
+        intentionally excluded so it is preserved across syncs. (As of the feed
+        update, ``nes_email``/``sex``/``programs`` ARE in `rows` and get written.)
         """
         if not rows:
             return
 
         update_cols = [c for c in rows[0] if c != "nes_id"]
+
+        def _set_value(stmt: Any, col: str) -> Any:
+            # nes_email can be bound at registration (byEmail) independently of the
+            # directory feed. Never let a NULL incoming value clobber a stored one:
+            # only overwrite when the feed actually carries an email.
+            if col == "nes_email":
+                return func.coalesce(stmt.excluded.nes_email, NesUser.nes_email)
+            return getattr(stmt.excluded, col)
 
         async with self.session() as session:
             for start in range(0, len(rows), _UPSERT_CHUNK):
@@ -75,7 +83,7 @@ class NesUserRepository:
                 stmt = insert(NesUser).values(chunk)
                 stmt = stmt.on_conflict_do_update(
                     index_elements=[NesUser.nes_id],
-                    set_={c: getattr(stmt.excluded, c) for c in update_cols},
+                    set_={c: _set_value(stmt, c) for c in update_cols},
                 )
                 await session.execute(stmt)
 

@@ -85,6 +85,22 @@ def specialty(r: Profile, *subs: str) -> bool:
     )
 
 
+def _programs(r: Profile) -> list[dict]:
+    return [p for p in (r.get("programs") or []) if isinstance(p, dict)]
+
+
+def sex(r: Profile, value: str) -> bool:
+    return _n(r.get("sex")) == _n(value)
+
+
+def program(r: Profile, *subs: str) -> bool:
+    return any(sub in _n(p.get("name")) for p in _programs(r) for sub in subs)
+
+
+def grad_year(r: Profile, *years: int) -> bool:
+    return any(p.get("year") in years for p in _programs(r))
+
+
 # --------------------------------------------------------------------------- #
 # The query set                                                               #
 # --------------------------------------------------------------------------- #
@@ -249,16 +265,28 @@ QUERIES: list[EvalQuery] = [
     EvalQuery("narrow_startup", "стартапы", "narrow",
               lambda r: pe(r, "Стартапы и инновации", "Предпринимательство")),
 
+    # --- new feed fields: sex + programs(name,year) (added by MyNES 2026-06) ---
+    EvalQuery("women_mae", "выпускницы программы Магистр экономики", "newfields",
+              lambda r: sex(r, "FEMALE") and program(r, "магистр экономики")),
+    EvalQuery("men_mif", "мужчины с программы Мастер финансов", "newfields",
+              lambda r: sex(r, "MALE") and program(r, "мастер финансов")),
+    EvalQuery("prog_mae", "выпускники программы Магистр экономики", "newfields",
+              lambda r: program(r, "магистр экономики")),
+    EvalQuery("prog_mif", "Master of Finance / Мастер финансов", "newfields",
+              lambda r: program(r, "мастер финансов")),
+    EvalQuery("class_2015", "выпуск 2015 года", "newfields",
+              lambda r: grad_year(r, 2015)),
     EvalQuery(
-        "mae2002", "Выпускников мужчин программы МАЭ 2002", "unsupported",
-        lambda r: False,
-        note="program/class_year/gender absent from /user/list — gold is empty by "
-        "construction; documents the data gap until MyNES adds those fields.",
+        "mae2002", "Выпускники мужчины программы МАЭ 2002", "newfields",
+        lambda r: sex(r, "MALE") and program(r, "магистр экономики")
+        and grad_year(r, 2002),
+        note="now answerable: sex + programs(name,year) arrived in the feed 2026-06.",
     ),
     EvalQuery(
-        "mf2015women", "женщины-выпускницы программы МФ 2015", "unsupported",
-        lambda r: False,
-        note="gender + program + class_year all absent from the feed.",
+        "mf2015women", "женщины-выпускницы программы Мастер финансов 2015", "newfields",
+        lambda r: sex(r, "FEMALE") and program(r, "мастер финансов")
+        and grad_year(r, 2015),
+        note="tiny gold (~2) but non-empty — exercises sex+program+year together.",
     ),
 ]
 

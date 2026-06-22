@@ -7,16 +7,22 @@ The feed is the single source of truth for alumni *profile* data. Each run:
   1. Fetches the full directory and dedupes it (the feed contains byte-identical
      duplicate rows) down to one record per alumni nes_id.
   2. Computes a content hash per profile and does work ONLY for changed/new/
-     relisted profiles: re-embeds + re-indexes them, and upserts only those rows
-     (overwriting removed fields with NULL, preserving `nes_email`/`created_at`).
-     Unchanged-and-listed profiles cost nothing beyond the hash compare, so the
-     steady-state hourly run is dominated by the single ~4 MB feed fetch.
+     relisted profiles — OR profiles missing from the OpenSearch index (a
+     presence check that self-heals a partially-lost index): re-embeds +
+     re-indexes them, and upserts only those rows (overwriting removed fields
+     with NULL; `created_at` is preserved). Unchanged-listed-present profiles
+     cost nothing beyond the hash/presence compare, so the steady-state hourly
+     run is dominated by the single ~4 MB feed fetch.
   4. Delists anyone who dropped out of the directory: marks `listed = False`
      and removes their OpenSearch document so they stop being searchable /
      matchable. The row is kept so existing references don't break.
 
-The feed carries NO email, so this path never touches `nes_email`; registration
-resolves email -> nes_id separately (see `api.request.ResolveNesUserByEmail`).
+The feed now carries `email`, `sex`, and `programs` (name+year), so this path
+writes `nes_email`/`sex`/`programs` (and the derived primary `program`/
+`class_name`). `nes_email` is COALESCE-guarded in SyncUpsertNesUsers so a feed
+that ever drops email cannot NULL an email already bound at registration (the
+byEmail path); registration still resolves email -> nes_id via
+`api.request.ResolveNesUserByEmail` (now DB-first for every alumnus).
 """
 
 import asyncio
@@ -34,7 +40,7 @@ from nespresso.db.services.user_context import GetUserContextService
 from nespresso.recsys.searching.document import (
     BulkDeleteOpenSearch,
     BulkUpsertMynesOpenSearch,
-    CountOpenSearchDocs,
+    PresentDocIds,
 )
 from nespresso.recsys.searching.filtering import StructuredFields
 from nespresso.recsys.searching.index import EnsureOpenSearchIndex
@@ -49,20 +55,26 @@ _EMBED_BATCH = 256
 # fields, enrichment, etc.): it is folded into the content hash, so every stored
 # hash mismatches and the next sync re-embeds + rewrites every profile.
 # v3: index-time world-knowledge enrichment before embedding.
-_DOC_VERSION = "3"
+# v4: feed added email + sex + programs; SearchText now includes program/year.
+_DOC_VERSION = "4"
 
-# Columns written verbatim from the feed to `nes_user`. `nes_email`, `created_at`
-# are omitted (preserved across syncs). `program`, `class_name` are ALSO omitted:
-# the directory feed never carries them, so nulling would wipe values captured via
-# the byEmail path at registration — they are preserved instead. `listed`,
-# `synced_at`, `mynes_text_hash`, `updated_at` are set explicitly per row.
+# Columns written from the feed to `nes_user`. The directory feed now carries
+# `email` (-> nes_email), `sex`, and `programs` (with program/class_name derived
+# from the latest program), so all are written. `created_at` is omitted
+# (preserved). `listed`, `synced_at`, `mynes_text_hash`, `updated_at` are set
+# explicitly per row.
 _PROFILE_COLUMNS = (
     "nes_id",
     "name",
+    "nes_email",
+    "sex",
     "city",
     "region",
     "country",
     "alumni",
+    "program",
+    "class_name",
+    "programs",
     "hobbies",
     "industry_expertise",
     "country_expertise",
@@ -109,7 +121,12 @@ def _Hash(text: str) -> str:
 
 def _ToModel(user: NesUserIn) -> NesUser:
     """Transient NesUser (not session-attached) used for FullDescription/columns."""
-    return NesUser(**user.model_dump(mode="json"))
+    model = NesUser(**user.model_dump(mode="json"))
+    # The feed delivers program+year only inside `programs`; derive the scalar
+    # program/class_name (primary = latest) for display + analytics, while the
+    # full `programs` list is kept on the model for structured search.
+    model.program, model.class_name = user.primary_program()
+    return model
 
 
 async def SyncFromMyNES(trigger: str) -> SyncReport:
@@ -186,30 +203,42 @@ async def _RunSync(report: SyncReport) -> None:
         new_hashes[nes_id] = _Hash(f"{_DOC_VERSION}:{user.model_dump_json()}")
 
     # Self-heal the search index. EnsureOpenSearchIndex recreates it if the data
-    # volume was reset; then, if it is EMPTY (freshly created, cold start, or
-    # wiped while the bot ran), force a FULL re-index. Otherwise the stored
-    # hashes would say "unchanged" and the empty index would never get
-    # repopulated — leaving Find search broken (404 / no results) until someone
-    # noticed. Keying off doc-count (not "did I just create it") also covers the
-    # case where startup's EnsureDependencies created the index moments earlier.
+    # volume was reset. Then reconcile against the documents ACTUALLY present:
+    # a profile is (re)indexed if its content changed OR it is missing from the
+    # index. The presence check is what repairs a PARTIAL loss (some docs wiped,
+    # an earlier index failure, a half-restored backup) — without it the stored
+    # hash says "unchanged" and the missing doc would never be repopulated,
+    # silently dropping that user from Find search and matching. A full wipe is
+    # just the all-missing special case.
     await EnsureOpenSearchIndex()
-    doc_count = await CountOpenSearchDocs()
+    present_ids = await PresentDocIds()
 
     ctx = await GetUserContextService()
     old_hashes = await ctx.GetNesUserHashes(fresh_ids)
-    # "changed" = new, modified, or previously-delisted profiles (delist clears
-    # the stored hash). Unchanged-and-listed profiles need NO work this run —
-    # not re-embedding and not even a DB write — which is what keeps the steady
-    # state cheap (typically a handful of rows, not all ~3k).
-    if doc_count == 0:
-        logging.warning(
-            f"MyNES sync: search index empty — forcing full re-index of "
-            f"{len(fresh_ids)} profiles."
-        )
-        changed = list(fresh_ids)
-    else:
-        changed = [nid for nid in fresh_ids if new_hashes[nid] != old_hashes.get(nid)]
+    # "changed" = new, modified, previously-delisted (delist clears the stored
+    # hash), OR missing from the index. Unchanged-listed-and-present profiles need
+    # NO work this run — not re-embedding and not even a DB write — which is what
+    # keeps the steady state cheap (typically a handful of rows, not all ~3k).
+    changed = [
+        nid
+        for nid in fresh_ids
+        if new_hashes[nid] != old_hashes.get(nid) or nid not in present_ids
+    ]
     report.changed = len(changed)
+
+    # Surface a silent partial-index loss: profiles the DB thinks are indexed
+    # (hash matches) yet are absent from the index — these are now being healed.
+    missing = sum(
+        1
+        for nid in fresh_ids
+        if nid not in present_ids and new_hashes[nid] == old_hashes.get(nid)
+    )
+    if missing:
+        logging.warning(
+            f"MyNES sync: {missing} listed profiles were missing from the search "
+            f"index despite an unchanged hash — re-indexing them (index had "
+            f"{len(present_ids)} docs, feed has {len(fresh_ids)} listed)."
+        )
 
     # Embed + index only changed profiles, batch by batch. Each batch is first
     # enriched with world-knowledge context (off the search hot path), then the

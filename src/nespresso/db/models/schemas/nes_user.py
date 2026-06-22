@@ -34,6 +34,13 @@ class WorkExperience(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class Program(BaseModel):
+    name: str | None = Field(default=None, description="Название программы")
+    year: int | None = Field(default=None, description="Год выпуска")
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class NesUserOut(BaseModel):
     nes_id: int = Field(description="my.nes ID")
 
@@ -41,6 +48,10 @@ class NesUserOut(BaseModel):
 class NesUserIn(NesUserOut):
     # Personal info
     name: str | None = Field(default=None, description="ФИО")
+    # The directory feed sends the field as `email`; we store it as `nes_email`
+    # (the model column). alias + populate_by_name lets both forms validate.
+    nes_email: str | None = Field(default=None, alias="email", description="Email")
+    sex: str | None = Field(default=None, description="Пол (MALE/FEMALE)")
     city: str | None = Field(default=None, description="Город")
     region: str | None = Field(default=None, description="Регион")
     country: str | None = Field(default=None, description="Страна")
@@ -48,6 +59,9 @@ class NesUserIn(NesUserOut):
     # NES alumni info
     program: str | None = Field(default=None, description="Программа")
     class_name: str | None = Field(default=None, description="Класс")
+    programs: list[Program] | None = Field(
+        default=None, description="Программы РЭШ (name + year)"
+    )
     alumni: bool | None = Field(default=None, description="Alumni status")
 
     # Hobbies and expertise
@@ -76,7 +90,7 @@ class NesUserIn(NesUserOut):
         default=None, description="Образование после РЭШ"
     )
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
     @field_validator(
         "hobbies",
@@ -90,3 +104,16 @@ class NesUserIn(NesUserOut):
         if isinstance(value, list):
             return [item for item in value if item is not None]
         return value
+
+    def primary_program(self) -> tuple[str | None, str | None]:
+        """The display program (latest year) from `programs`, as (name, year-str).
+
+        Used to populate the scalar `program`/`class_name` columns from the feed's
+        `programs` list — by BOTH ingest paths (directory sync + byEmail), so they
+        derive the primary program identically.
+        """
+        progs = [p for p in (self.programs or []) if p and p.name]
+        if not progs:
+            return None, None
+        primary = max(progs, key=lambda p: p.year or 0)
+        return primary.name, (str(primary.year) if primary.year else None)

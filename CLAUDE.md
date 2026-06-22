@@ -243,10 +243,12 @@ core/configs ←── everywhere (settings, paths, admin_store)
 | Column | Type | Notes |
 |--------|------|-------|
 | `nes_id` | BigInteger PK | |
-| `nes_email` | String | indexed. Set only via the byEmail path / registration; **the directory feed carries no email**, so the hourly sync preserves it. |
+| `nes_email` | String | indexed. The directory feed now carries `email`, so the sync writes it — but COALESCE-guarded (`SyncUpsertNesUsers`), so a feed that ever drops email can't NULL an email bound at registration (byEmail path). |
 | `name` | String | |
+| `sex` | String | `"MALE"` / `"FEMALE"`, from the feed. Indexed as `f_sex`; drives gender filtering (boost-only, not recall). |
 | `city/region/country` | String | |
-| `program/class_name` | String | NES study program |
+| `programs` | JSON array | `[{name, year}]` from the feed — NES program(s) + class year. Indexed as multi-valued `f_program` / `f_class_year`. |
+| `program/class_name` | String | Primary (latest) program name + year, **derived** from `programs` for display/analytics. |
 | `hobbies/industry_expertise/country_expertise/professional_expertise` | JSON array | Skills/interests |
 | `main_work/additional_work` | JSON object | Employment |
 | `pre_nes_education/post_nes_education` | JSON array | Education history |

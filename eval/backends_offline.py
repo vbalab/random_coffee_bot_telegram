@@ -17,7 +17,7 @@ import math
 import re
 from collections import Counter
 
-from eval.dataset import Profile, _edu, _n, city, company
+from eval.dataset import Profile, _edu, _n, city, company, grad_year, program
 from nespresso.recsys.searching.llm.query_understanding import ParseQuery
 from nespresso.recsys.searching.llm.rerank import Rerank
 
@@ -78,6 +78,12 @@ def ProfileBlob(r: Profile) -> str:
                 for k in ("university", "specialty", "specialization", "program"):
                     if e.get(k):
                         parts.append(str(e[k]))
+    for p in r.get("programs") or []:
+        if isinstance(p, dict):
+            if p.get("name"):
+                parts.append(str(p["name"]))
+            if p.get("year"):
+                parts.append(str(p["year"]))
     return " ".join(parts)
 
 
@@ -90,6 +96,12 @@ def ShortCandidate(r: Profile) -> str:
     if isinstance(mw, dict):
         bits.append(" / ".join(str(mw[k]) for k in ("company", "position", "industry")
                                if mw.get(k)))
+    progs = [
+        str(p["name"]) for p in (r.get("programs") or [])
+        if isinstance(p, dict) and p.get("name")
+    ]
+    if progs:
+        bits.append("program: " + ", ".join(progs))
     petags = [str(x) for x in (r.get("professional_expertise") or []) if x]
     if petags:
         bits.append("expertise: " + ", ".join(petags[:6]))
@@ -169,6 +181,12 @@ class ParserFilter:
                               & set(r.get("professional_expertise") or []))
             struct += 2 * len(set(f.industry_expertise)
                               & set(r.get("industry_expertise") or []))
+            if f.program and program(r, _n(f.program)):
+                struct += 3
+            if f.class_year and grad_year(r, f.class_year):
+                struct += 2
+            if f.gender and _n(f.gender) == _n(r.get("sex")):
+                struct += 2
             if uni_subs and any(s in self.c.edu_uni[i] for s in uni_subs):
                 struct += 3
             if role_tokens:

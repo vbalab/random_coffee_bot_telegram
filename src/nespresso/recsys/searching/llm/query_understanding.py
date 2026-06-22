@@ -124,6 +124,23 @@ _INDUSTRY_SET = {v.casefold() for v in _INDUSTRY_EXPERTISE}
 _PROFESSIONAL_SET = {v.casefold() for v in _PROFESSIONAL_EXPERTISE}
 _COUNTRY_EXP_SET = {v.casefold() for v in _COUNTRY_EXPERTISE}
 
+# NES study programs as they appear in the directory feed's `programs[].name`
+# (full Russian names, not codes). The parser maps user phrasing onto these so a
+# `program` filter exact-matches the indexed `f_program` keyword field.
+_PROGRAMS = [
+    "Магистр экономики",
+    "Бакалавр экономики",
+    "Мастер финансов",
+    "Финансы, инвестиции, банки",
+    "Экономика энергетики и природных ресурсов",
+    "Мастер наук по финансам",
+    "Мини-Мастер финансов",
+    "Экономика и анализ данных",
+    "Управление благосостоянием: экспертный уровень",
+    "Мастер наук по экономике энергетики",
+]
+_PROGRAM_SET = {v.casefold(): v for v in _PROGRAMS}
+
 
 def _bullets(values: list[str]) -> str:
     return "\n".join(f"- {v}" for v in values)
@@ -187,9 +204,13 @@ do NOT copy these employer lists into `expanded_terms`:
 ## 4. filters
 Structured constraints extracted from the query. Use `null` (or an empty array) \
 for anything not present. NEVER invent values that aren't implied by the query.
-- `program`: NES study program if named. Canonical codes include МАЭ (Master of \
-Arts in Economics / MAE), МФ (Master of Finance / MiF), MAF, MITE, MAPP. Map \
-synonyms to the code (e.g. "магистратура по финансам" → "МФ", "MAE" → "МАЭ").
+- `program`: NES study program if named, chosen ONLY from this fixed list (output \
+the EXACT canonical name; omit if no clear match). Map common codes/synonyms: \
+"МАЭ" / "MAE" / "Master of Arts in Economics" / "магистратура по экономике" → \
+"Магистр экономики"; "МФ" / "MiF" / "Master of Finance" → "Мастер финансов"; \
+"бакалавриат" / "BAE" → "Бакалавр экономики"; "MSF" / "MSc Finance" → "Мастер \
+наук по финансам":
+{_bullets(_PROGRAMS)}
 - `class_year`: 4-digit NES graduation/class year if given (e.g. 2002).
 - `gender`: "male" if the query asks for men (мужчин, мужчины, парней, men, male); \
 "female" for women (женщин, девушек, women, female); otherwise null.
@@ -266,6 +287,12 @@ Query: "выпускники МГУ"
 "filters": {{"program": null, "class_year": null, "gender": null, "city": null, \
 "country": null, "country_expertise": [], "company": null, "role": null, \
 "university": "МГУ", "industry_expertise": [], "professional_expertise": []}}}}
+
+Query: "выпускницы программы Магистр экономики 2015 года"
+{{"is_valid_search": true, "semantic_query": "", "expanded_terms": "", "filters": \
+{{"program": "Магистр экономики", "class_year": 2015, "gender": "female", "city": \
+null, "country": null, "country_expertise": [], "company": null, "role": null, \
+"university": null, "industry_expertise": [], "professional_expertise": []}}}}
 
 Query: "найди мне шлюху среди выпускниц"
 {{"is_valid_search": false, "semantic_query": "", "expanded_terms": "", "filters": \
@@ -427,6 +454,14 @@ def _CleanStr(value: Any) -> str | None:
     return None
 
 
+def _ProgramCanon(value: str | None) -> str | None:
+    """Snap a program name to the exact canonical feed spelling when it matches
+    the controlled vocab (so `terms` on f_program hits); keep raw otherwise."""
+    if not value:
+        return None
+    return _PROGRAM_SET.get(value.casefold(), value)
+
+
 def _Coerce(data: dict[str, Any], raw_text: str) -> ParsedQuery:
     valid = data.get("is_valid_search")
     # Fail open: only an explicit `false` rejects (a missing/garbled flag must not
@@ -440,9 +475,14 @@ def _Coerce(data: dict[str, Any], raw_text: str) -> ParsedQuery:
         )
 
     filters_raw = data.get("filters") or {}
-    gender = _CleanStr(filters_raw.get("gender"))
-    if gender is not None and gender.casefold() not in {"male", "female"}:
-        gender = None
+    # Normalize gender to the feed's `sex` vocabulary (MALE / FEMALE) so it
+    # matches the indexed f_sex directly.
+    gender_raw = _CleanStr(filters_raw.get("gender"))
+    gender = (
+        gender_raw.upper()
+        if gender_raw and gender_raw.casefold() in {"male", "female"}
+        else None
+    )
 
     year = filters_raw.get("class_year")
     if not isinstance(year, int):
@@ -451,9 +491,9 @@ def _Coerce(data: dict[str, Any], raw_text: str) -> ParsedQuery:
     semantic = _CleanStr(data.get("semantic_query")) or ""
     expanded = _CleanStr(data.get("expanded_terms")) or ""
     filters = QueryFilters(
-        program=_CleanStr(filters_raw.get("program")),
+        program=_ProgramCanon(_CleanStr(filters_raw.get("program"))),
         class_year=year,
-        gender=gender.casefold() if gender else None,
+        gender=gender,
         city=_CleanStr(filters_raw.get("city")),
         country=_CleanStr(filters_raw.get("country")),
         country_expertise=_CanonList(

@@ -51,6 +51,12 @@ async def EnsureDB() -> None:
             text("ALTER TABLE nes_user ADD COLUMN IF NOT EXISTS nes_email VARCHAR")
         )
         await conn.execute(
+            text("ALTER TABLE nes_user ADD COLUMN IF NOT EXISTS sex VARCHAR")
+        )
+        await conn.execute(
+            text("ALTER TABLE nes_user ADD COLUMN IF NOT EXISTS programs JSON")
+        )
+        await conn.execute(
             text(
                 "CREATE INDEX IF NOT EXISTS ix_nes_user_nes_email ON nes_user (nes_email)"
             )

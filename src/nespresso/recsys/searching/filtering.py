@@ -70,30 +70,35 @@ def StructuredFields(nes_user: Any) -> dict[str, Any]:
         e["university"] for e in edus
         if isinstance(e, dict) and e.get("university")
     ]
+    programs = nes_user.programs or []
+    program_names = [
+        p["name"] for p in programs if isinstance(p, dict) and p.get("name")
+    ]
+    class_years = [
+        str(p["year"]) for p in programs if isinstance(p, dict) and p.get("year")
+    ]
     fields: dict[str, Any] = {
         "name": nes_user.name,
+        "f_sex": nes_user.sex or "",
         "f_city": nes_user.city,
         "f_region": nes_user.region,
         "f_country": nes_user.country,
-        "f_professional": nes_user.professional_expertise or [],
-        "f_industry": nes_user.industry_expertise or [],
-        "f_country_exp": nes_user.country_expertise or [],
+        # Multi-valued (a person can have >1 program). Defensive null-drop on the
+        # controlled-vocab arrays — the feed occasionally ships stray nulls.
+        "f_program": program_names,
+        "f_class_year": class_years,
+        "f_professional": [v for v in (nes_user.professional_expertise or []) if v],
+        "f_industry": [v for v in (nes_user.industry_expertise or []) if v],
+        "f_country_exp": [v for v in (nes_user.country_expertise or []) if v],
         "f_company": " | ".join(companies),
         "f_universities": " | ".join(universities),
     }
-    # program / class_name are absent from the directory feed; only write them when
-    # present (e.g. captured via byEmail) so the hourly sync doesn't null them in
-    # the index via doc_as_upsert.
-    if nes_user.program:
-        fields["f_program"] = nes_user.program
-    if nes_user.class_name:
-        fields["f_class"] = nes_user.class_name
     return fields
 
 
 # The `_source` fields the search must return for re-scoring + rerank cards.
 SOURCE_FIELDS = [
-    "name", "f_city", "f_region", "f_country", "f_program", "f_class",
+    "name", "f_sex", "f_city", "f_region", "f_country", "f_program", "f_class_year",
     "f_professional", "f_industry", "f_country_exp", "f_company", "f_universities",
 ]
 
@@ -106,6 +111,16 @@ def StructuredBoost(filters: QueryFilters, doc: dict[str, Any]) -> float:
     if filters.city and _n(filters.city) in city:
         boost += 3
     if filters.country and _n(filters.country) in _n(doc.get("f_country")):
+        boost += 2
+
+    # gender is normalized to the feed's MALE/FEMALE in the parser (_Coerce).
+    if filters.gender and filters.gender == doc.get("f_sex"):
+        boost += 2
+    if filters.program and filters.program in set(doc.get("f_program") or []):
+        boost += 3
+    if filters.class_year and str(filters.class_year) in set(
+        doc.get("f_class_year") or []
+    ):
         boost += 2
 
     boost += 2 * len(set(filters.country_expertise) & set(doc.get("f_country_exp") or []))
@@ -129,6 +144,9 @@ def CandidateCard(doc: dict[str, Any]) -> str:
     bits: list[str] = [str(doc.get("name") or "")]
     if doc.get("f_city"):
         bits.append(str(doc["f_city"]))
+    prog = [str(x) for x in (doc.get("f_program") or []) if x]
+    if prog:
+        bits.append("program: " + ", ".join(prog))
     if doc.get("f_company"):
         bits.append(str(doc["f_company"]))
     prof = [str(x) for x in (doc.get("f_professional") or []) if x]

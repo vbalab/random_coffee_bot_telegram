@@ -54,7 +54,11 @@ async def _SendWithRetry(send: Callable[[], Awaitable[T]], context: str) -> T:
 
 def _NesUserPydanticToSQLAlchemy(instance: NesUserIn) -> NesUser:
     raw = instance.model_dump(mode="json", exclude_unset=True)
-    return NesUser(**raw)
+    model = NesUser(**raw)
+    # Derive scalar program/class_name from `programs` (same as the sync path) so a
+    # byEmail-resolved user also gets a primary program for display/analytics.
+    model.program, model.class_name = instance.primary_program()
+    return model
 
 
 # --------------------------------------------------------------------------- #

@@ -15,13 +15,16 @@ class NesUser(Base):
 
     # Personal info
     name: Mapped[str | None] = mapped_column(String, nullable=True)
+    sex: Mapped[str | None] = mapped_column(String, nullable=True)  # "MALE" / "FEMALE"
     city: Mapped[str | None] = mapped_column(String, nullable=True)
     region: Mapped[str | None] = mapped_column(String, nullable=True)
     country: Mapped[str | None] = mapped_column(String, nullable=True)
 
-    # NES alumni info
+    # NES alumni info. `programs` is the directory feed's list of {name, year};
+    # `program`/`class_name` hold the primary (latest) one for display/analytics.
     program: Mapped[str | None] = mapped_column(String, nullable=True)
     class_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    programs: Mapped[list | None] = mapped_column(JSON, nullable=True)
     alumni: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     # Hobbies and expertise
@@ -178,6 +181,16 @@ class NesUser(Base):
         loc_line = ", ".join(p for p in loc if p)
         if loc_line:
             lines.append(loc_line)
+
+        # NES program(s) + class year, so "Магистр экономики 2009" matches by text
+        # (sex is deliberately NOT embedded — it's a structured-only filter).
+        prog_line = ", ".join(
+            f"{p.get('name', '')} {p.get('year', '')}".strip()
+            for p in (self.programs or [])
+            if isinstance(p, dict) and p.get("name")
+        )
+        if prog_line:
+            lines.append(prog_line)
 
         works = [self.main_work] + (self.additional_work or [])
         for w in works:

@@ -129,6 +129,14 @@ class ScrollingSearch:
             should.append({"terms": {"f_industry": filters.industry_expertise}})
         if filters.country_expertise:
             should.append({"terms": {"f_country_exp": filters.country_expertise}})
+        if filters.program:
+            should.append({"terms": {"f_program": [filters.program]}})
+        if filters.class_year:
+            should.append({"term": {"f_class_year": str(filters.class_year)}})
+        # gender (f_sex) is intentionally NOT a recall clause — MALE/FEMALE each
+        # match ~half the directory and would flood the pool. It only re-scores
+        # (StructuredBoost) candidates that another filter / the semantic pool
+        # already surfaced.
         if filters.city:
             should.append({"match": {"f_city": filters.city}})
             should.append({"match": {"f_region": filters.city}})

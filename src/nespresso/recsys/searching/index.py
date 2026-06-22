@@ -36,11 +36,12 @@ class DocAttr:
 # so the structured `terms` query matches exactly; free-text fields are text.
 _STRUCTURED_PROPERTIES: dict = {
     "name": {"type": "text"},
+    "f_sex": {"type": "keyword"},
     "f_city": {"type": "keyword"},
     "f_region": {"type": "keyword"},
     "f_country": {"type": "keyword"},
     "f_program": {"type": "keyword"},
-    "f_class": {"type": "keyword"},
+    "f_class_year": {"type": "keyword"},
     "f_professional": {"type": "keyword"},
     "f_industry": {"type": "keyword"},
     "f_country_exp": {"type": "keyword"},

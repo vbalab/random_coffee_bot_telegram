@@ -20,3 +20,6 @@ run.sh
 
 # generated eval artifact (reproducible from eval/dataset.py)
 eval/dataset.json
+
+# scratch dir for ad-hoc artifacts (API spec dumps, CSV exports, generated PDFs)
+tmp/
