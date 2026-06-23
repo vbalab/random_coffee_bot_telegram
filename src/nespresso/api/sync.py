@@ -56,7 +56,10 @@ _EMBED_BATCH = 256
 # hash mismatches and the next sync re-embeds + rewrites every profile.
 # v3: index-time world-knowledge enrichment before embedding.
 # v4: feed added email + sex + programs; SearchText now includes program/year.
-_DOC_VERSION = "4"
+# v5: SearchText now also includes the education `department` (the feed populated
+#     post_nes_education); a SearchText change is invisible to the feed-JSON hash,
+#     so the version bump is what forces the re-embed.
+_DOC_VERSION = "5"
 
 # Columns written from the feed to `nes_user`. The directory feed now carries
 # `email` (-> nes_email), `sex`, and `programs` (with program/class_name derived

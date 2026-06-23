@@ -220,8 +220,8 @@ class NesUser(Base):
                 parts = [
                     e.get(k)
                     for k in (
-                        "university", "specialty", "specialization", "program",
-                        "degree",
+                        "university", "department", "specialty", "specialization",
+                        "program", "degree",
                     )
                 ]
                 el = ", ".join(p for p in parts if p)
