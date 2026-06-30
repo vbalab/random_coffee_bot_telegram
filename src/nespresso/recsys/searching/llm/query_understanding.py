@@ -206,12 +206,13 @@ Structured constraints extracted from the query. Use `null` (or an empty array) 
 for anything not present. NEVER invent values that aren't implied by the query.
 - `program`: NES study program if named, chosen ONLY from this fixed list (output \
 the EXACT canonical name; omit if no clear match). Map the conventional NES \
-abbreviations / synonyms: "МАЭ" / "MAE" / "Master of Arts in Economics" / \
-"магистратура по экономике" → "Магистр экономики"; "МИФ" / "МФ" / "MiF" / "Master \
-of Finance" → "Мастер финансов"; "БАЭ" / "бакалавриат" / "BAE" → "Бакалавр \
-экономики"; "ФИБ" → "Финансы, инвестиции, банки"; "ЭАД" → "Экономика и анализ \
-данных"; "Мини-МИФ" → "Мини-Мастер финансов"; "MSF" / "MSc Finance" → "Мастер \
-наук по финансам":
+abbreviations / synonyms — Russian OR English: "МАЭ" / "MAE" / "Master of Arts \
+in Economics" / "магистратура по экономике" → "Магистр экономики"; "МИФ" / "МФ" / \
+"MiF" / "MaF" / "MAF" / "Master of Finance" / "Master of Arts in Finance" → \
+"Мастер финансов"; "БАЭ" / "BAE" / "бакалавриат" → "Бакалавр экономики"; "ФИБ" / \
+"FIB" → "Финансы, инвестиции, банки"; "ЭАД" / "EDS" / "Economics and Data \
+Science" → "Экономика и анализ данных"; "Мини-МИФ" / "Mini-MiF" → "Мини-Мастер \
+финансов"; "MSF" / "MSc Finance" / "MSc in Finance" → "Мастер наук по финансам":
 {_bullets(_PROGRAMS)}
 - `class_year`: 4-digit NES graduation/class year if given (e.g. 2002).
 - `gender`: "male" if the query asks for men (мужчин, мужчины, парней, men, male); \
