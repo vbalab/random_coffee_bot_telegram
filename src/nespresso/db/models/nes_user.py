@@ -1,3 +1,4 @@
+import html
 from collections.abc import Sequence
 from datetime import datetime
 
@@ -5,6 +6,18 @@ from sqlalchemy import JSON, BigInteger, Boolean, DateTime, String, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from nespresso.db.base import Base
+
+# Display-side NES program abbreviations (full feed name -> conventional short
+# name from nes.ru). Programs without a standard abbreviation keep their full
+# name. The parser (query_understanding.py) maps the REVERSE for search.
+_PROGRAM_ABBR: dict[str, str] = {
+    "Магистр экономики": "МАЭ",
+    "Бакалавр экономики": "БАЭ",
+    "Мастер финансов": "МИФ",
+    "Финансы, инвестиции, банки": "ФИБ",
+    "Экономика и анализ данных": "ЭАД",
+    "Мини-Мастер финансов": "Мини-МИФ",
+}
 
 
 class NesUser(Base):
@@ -230,81 +243,105 @@ class NesUser(Base):
 
         return "\n".join(lines)
 
-    def _FormatWorkExperience(
+    def _FormatEntries(
         self,
         label: str,
-        models: (
-            Mapped[dict[str, str] | None]
-            | Sequence[Mapped[dict[str, str] | None]]
-            | None
-        ),
+        items: Sequence[object],
+        normal_keys: tuple[str, ...],
+        italic_key: str,
     ) -> str | None:
-        if not models:
-            return None
-
-        if not isinstance(models, list):
-            items = [models]
-        else:
-            items = models
-
+        """A <b>bold</b>-labelled section. Each entry is one line —
+        "<normal>, <i>italic</i>" — so the organization/school reads as plain text
+        and the role/degree is italicized, separating the two within a line.
+        ALL dynamic content is HTML-escaped (the card is sent with parse_mode=HTML).
+        """
         entries: list[str] = []
         for m in items:
-            if isinstance(m, dict):
-                data = m
+            if not isinstance(m, dict):
+                continue
+            normal = ", ".join(
+                html.escape(str(m[k]).strip())
+                for k in normal_keys
+                if m.get(k) and str(m[k]).strip()
+            )
+            italic_val = str(m.get(italic_key) or "").strip()
+            if italic_val:
+                italic = f"<i>{html.escape(italic_val)}</i>"
+                line = f"{normal}, {italic}" if normal else italic
             else:
-                data = m.model_dump()
+                line = normal
+            if line:
+                entries.append(line)
 
-            parts = []
-            for key, value in data.items():
-                if key in ["company", "department", "position"] and value:
-                    parts.append(value)
-
-            if parts:
-                entries.append(",\n     ".join(parts))
-
+        entries = list(dict.fromkeys(entries))  # dedupe, preserve order
         if not entries:
             return None
+        sub = "\n".join(f"  – {e}" for e in entries)
+        return f"<b>{label}</b>:\n{sub}"
 
-        entries = list(set(entries))
-        sub = "\n\n".join(f"  – {e}" for e in entries)
+    def _WorkSection(self, label: str, models: object) -> str | None:
+        if not models:
+            return None
+        items = models if isinstance(models, list) else [models]
+        return self._FormatEntries(label, items, ("company", "department"), "position")
 
-        return f"{label}:\n{sub}"
+    def _ProgramsDisplay(self) -> str:
+        """NES program(s) as conventional abbreviations + class year, e.g.
+        "МАЭ'2008" (instead of the long "Магистр экономики")."""
+        parts: list[str] = []
+        for p in self.programs or []:
+            if isinstance(p, dict) and p.get("name"):
+                abbr = _PROGRAM_ABBR.get(p["name"], p["name"])
+                year = p.get("year")
+                parts.append(
+                    f"{html.escape(str(abbr))}'{year}" if year else html.escape(str(abbr))
+                )
+        if not parts and self.program:  # fall back to the derived scalar
+            abbr = _PROGRAM_ABBR.get(self.program, self.program)
+            parts.append(
+                f"{html.escape(str(abbr))}'{self.class_name}"
+                if self.class_name
+                else html.escape(str(abbr))
+            )
+        return ", ".join(parts)
 
     def SelfDescription(self) -> str:
-        text = ""
-        text += f"{self.name}\n" if self.name else ""
+        """Card header (HTML): <b>name</b>, [location], program-abbr'year."""
+        lines: list[str] = []
+        if self.name:
+            lines.append(f"<b>{html.escape(self.name)}</b>")
 
-        text += "[" if self.city or self.region or self.country else ""
-        text += f"{self.city}" if self.city else ""
-        text += (
-            ", "
-            if self.city
-            and ((self.region and (self.city != self.region)) or self.country)
-            else ""
-        )
-        if self.city != self.region:
-            text += f"{self.region}" if self.region else ""
-            text += ", " if self.region and self.country else ""
-        text += f"{self.country}" if self.country else ""
-        text += "]\n" if self.city or self.region or self.country else ""
+        loc = [self.city]
+        if self.region and self.region != self.city:
+            loc.append(self.region)
+        if self.country:
+            loc.append(self.country)
+        loc_str = ", ".join(p for p in loc if p)
+        if loc_str:
+            lines.append(f"[{html.escape(loc_str)}]")
 
-        text += (
-            f"{self.program}'{self.class_name}\n"
-            if self.program and self.class_name
-            else ""
-        )
+        prog = self._ProgramsDisplay()
+        if prog:
+            lines.append(prog)
 
-        return text
+        return ("\n".join(lines) + "\n") if lines else ""
 
     def WorkDescription(self) -> str:
-        main_work = self._FormatWorkExperience("Main work", self.main_work)
-        additional_work = self._FormatWorkExperience(
-            "Additional work", self.additional_work
-        )
-
-        text = ""
-        text += main_work if main_work else ""
-        text += "\n\n" if main_work and additional_work else ""
-        text += additional_work if additional_work else ""
-
-        return text
+        """Employment + post-NES education sections (HTML, bold headers)."""
+        sections: list[str] = []
+        cur = self._WorkSection("Текущая занятость", self.main_work)
+        if cur:
+            sections.append(cur)
+        prev = self._WorkSection("Предыдущий опыт", self.additional_work)
+        if prev:
+            sections.append(prev)
+        if self.post_nes_education:
+            edu = self._FormatEntries(
+                "Образование после РЭШ",
+                self.post_nes_education,
+                ("university", "program"),
+                "degree",
+            )
+            if edu:
+                sections.append(edu)
+        return "\n\n".join(sections)

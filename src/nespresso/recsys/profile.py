@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 from dataclasses import dataclass
 
 from nespresso.bot.lib.chat.username import GetTgUsername
@@ -56,14 +57,16 @@ class Profile:
         )
 
     def DescribeProfile(self) -> str:
+        """Profile card as Telegram HTML (sent with parse_mode="HTML")."""
         text = ""
         text += f"{self.nes_self}\n\n" if self.nes_self else ""
 
-        text += f"@{self.username}\n" if self.username else ""
-        text += f"{self.email}\n" if self.email else ""
+        text += f"@{html.escape(self.username)}\n" if self.username else ""
+        # <code> renders the email monospace and makes it tap-to-copy in Telegram.
+        text += f"<code>{html.escape(self.email)}</code>\n" if self.email else ""
         text += "\n" if self.username or self.email else ""
 
-        text += f"About:\n{self.about}\n\n" if self.about else ""
+        text += f"<b>About:</b>\n{html.escape(self.about)}\n\n" if self.about else ""
 
         text += f"{self.nes_work}" if self.nes_work else ""
 

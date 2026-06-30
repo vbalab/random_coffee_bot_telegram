@@ -205,10 +205,12 @@ do NOT copy these employer lists into `expanded_terms`:
 Structured constraints extracted from the query. Use `null` (or an empty array) \
 for anything not present. NEVER invent values that aren't implied by the query.
 - `program`: NES study program if named, chosen ONLY from this fixed list (output \
-the EXACT canonical name; omit if no clear match). Map common codes/synonyms: \
-"МАЭ" / "MAE" / "Master of Arts in Economics" / "магистратура по экономике" → \
-"Магистр экономики"; "МФ" / "MiF" / "Master of Finance" → "Мастер финансов"; \
-"бакалавриат" / "BAE" → "Бакалавр экономики"; "MSF" / "MSc Finance" → "Мастер \
+the EXACT canonical name; omit if no clear match). Map the conventional NES \
+abbreviations / synonyms: "МАЭ" / "MAE" / "Master of Arts in Economics" / \
+"магистратура по экономике" → "Магистр экономики"; "МИФ" / "МФ" / "MiF" / "Master \
+of Finance" → "Мастер финансов"; "БАЭ" / "бакалавриат" / "BAE" → "Бакалавр \
+экономики"; "ФИБ" → "Финансы, инвестиции, банки"; "ЭАД" → "Экономика и анализ \
+данных"; "Мини-МИФ" → "Мини-Мастер финансов"; "MSF" / "MSc Finance" → "Мастер \
 наук по финансам":
 {_bullets(_PROGRAMS)}
 - `class_year`: 4-digit NES graduation/class year if given (e.g. 2002).

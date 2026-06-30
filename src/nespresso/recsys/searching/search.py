@@ -271,7 +271,7 @@ class ScrollingSearch:
         """Render the current page with a live page counter (n / loaded[+])."""
         page = self.pages[self.index]
         label = f"[Page: {page.number + 1} / {self._Denominator()}]"
-        return f"`{label}`\n\n{page.GetProfileText()}"
+        return f"<code>{label}</code>\n\n{page.GetProfileText()}"
 
     def CanScrollFurtherBackward(self) -> bool:
         return self.index > 0

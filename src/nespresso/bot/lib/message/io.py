@@ -80,6 +80,7 @@ async def SendMessage(
         | None
     ) = None,
     context: ContextIO = ContextIO.No,
+    parse_mode: str | None = None,
 ) -> types.Message | None:
     add = ContextIO.No
 
@@ -89,6 +90,7 @@ async def SendMessage(
             chat_id=chat_id,
             text=text,
             reply_markup=reply_markup,
+            parse_mode=parse_mode,
         )
 
         ctx = await GetUserContextService()

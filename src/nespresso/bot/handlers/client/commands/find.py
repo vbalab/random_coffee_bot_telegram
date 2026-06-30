@@ -117,6 +117,7 @@ async def CommandFindText(message: types.Message, state: FSMContext) -> None:
         reply_markup=FindKeyboard(
             search_id=search_id, next=search.CanScrollFurtherForward()
         ),
+        parse_mode="HTML",
     )
 
     await state.clear()
@@ -171,5 +172,6 @@ async def CommandFindCallback(
     await callback_query.message.edit_text(
         text=text,
         reply_markup=markup,
+        parse_mode="HTML",
     )
     await callback_query.answer()

@@ -170,9 +170,14 @@ async def SendMatchingInfo(assignments_map: dict[int, list[int]]) -> None:
             texts.append(profile.DescribeProfile())
 
         # Sequential send → the greeting reliably arrives before the profiles.
-        for text in texts:
+        # texts[0] is the plain greeting; texts[1:] are HTML profile cards.
+        for i, text in enumerate(texts):
             async with limiter:
-                await SendMessage(chat_id=assigner_chat_id, text=text)
+                await SendMessage(
+                    chat_id=assigner_chat_id,
+                    text=text,
+                    parse_mode="HTML" if i > 0 else None,
+                )
 
     await asyncio.gather(
         *(
