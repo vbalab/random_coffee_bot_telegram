@@ -229,8 +229,14 @@ markets / развивающиеся рынки" → "Emerging markets"; "Евр
 "McKinsey").
 - `role`: a job role / title / position in free text if described (e.g. "data \
 scientist", "руководитель проекта", "CFO", "трейдер"). Keep it short.
-- `university`: a non-NES university if named, for pre/post-NES education. Use a \
-recognizable short form (e.g. "МГУ", "МФТИ", "ВШЭ", "Физтех", "MIT") AND repeat it \
+- `university`: a non-NES university where the person STUDIED (pre/post-NES \
+education — bachelor/master/PhD), if named. Recognize it in education phrasings \
+even when only the short name is given: "выпускник/учился/студент/закончил X", \
+"degree/PhD/Master/MBA from X", "PhD из X", "защитил(ся) ... в X", "doctorate at \
+X" → university = X (e.g. "PhD из Боккони" → "Боккони"; "учился в MIT" → "MIT"). \
+This is the SCHOOL someone attended — do NOT confuse it with an employer: "работает \
+в X" / "преподаёт в X" / "professor at X" is `company`, not `university`. Use a \
+recognizable short form (e.g. "МГУ", "МФТИ", "ВШЭ", "MIT", "Боккони") AND repeat it \
 inside `semantic_query` so it can also match by text.
 - `industry_expertise`: zero or more values, chosen ONLY from this fixed list \
 (translate the user's wording to the closest canonical Russian value; omit if no \
@@ -287,6 +293,13 @@ Query: "выпускники МГУ"
 "filters": {{"program": null, "class_year": null, "gender": null, "city": null, \
 "country": null, "country_expertise": [], "company": null, "role": null, \
 "university": "МГУ", "industry_expertise": [], "professional_expertise": []}}}}
+
+Query: "PhD из Боккони"
+{{"is_valid_search": true, "semantic_query": "Боккони Bocconi PhD doctorate", \
+"expanded_terms": "PhD, doctorate, доктор философии, кандидат наук", "filters": \
+{{"program": null, "class_year": null, "gender": null, "city": null, "country": \
+null, "country_expertise": [], "company": null, "role": null, "university": \
+"Боккони", "industry_expertise": [], "professional_expertise": []}}}}
 
 Query: "выпускницы программы Магистр экономики 2015 года"
 {{"is_valid_search": true, "semantic_query": "", "expanded_terms": "", "filters": \

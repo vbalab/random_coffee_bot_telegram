@@ -165,6 +165,10 @@ QUERIES: list[EvalQuery] = [
               lambda r: university(r, "высшая школа экономики")),
     EvalQuery("spec_phys", "люди с физическим образованием", "education",
               lambda r: specialty(r, "физик")),
+    EvalQuery("uni_bocconi", "PhD из Боккони", "education",
+              lambda r: university(r, "боккони"),
+              note="must surface people who STUDIED at Bocconi, not those who WORK "
+              "there (the work-vs-studied disambiguation)."),
 
     # --- company ---
     EvalQuery("co_yandex", "кто работает в Яндексе", "company",

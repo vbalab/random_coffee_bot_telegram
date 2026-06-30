@@ -147,8 +147,14 @@ def CandidateCard(doc: dict[str, Any]) -> str:
     prog = [str(x) for x in (doc.get("f_program") or []) if x]
     if prog:
         bits.append("program: " + ", ".join(prog))
+    # Label work vs studied explicitly: the same name (e.g. "Боккони") can be an
+    # employer or an alma mater, and the reranker must tell "works at X" from
+    # "studied at X" (without the education line it ranked a Bocconi EMPLOYEE top
+    # for "PhD from Bocconi").
     if doc.get("f_company"):
-        bits.append(str(doc["f_company"]))
+        bits.append("work: " + str(doc["f_company"]))
+    if doc.get("f_universities"):
+        bits.append("studied: " + str(doc["f_universities"]))
     prof = [str(x) for x in (doc.get("f_professional") or []) if x]
     if prof:
         bits.append("expertise: " + ", ".join(prof[:6]))
