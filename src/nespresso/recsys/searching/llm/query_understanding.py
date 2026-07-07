@@ -39,6 +39,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from nespresso.core.configs.settings import settings
+from nespresso.recsys.searching.llm.alerts import ReportLLMError
 from nespresso.recsys.searching.llm.client import client
 from nespresso.recsys.searching.llm.world_knowledge import WORLD_KNOWLEDGE
 
@@ -571,12 +572,13 @@ async def ParseQuery(text: str) -> ParsedQuery:
             },
         )
         return parsed
-    except Exception:
+    except Exception as exc:
         logging.warning(
             "ParseQuery failed; falling back to raw query.",
             extra={"query": text},
             exc_info=True,
         )
+        await ReportLLMError(exc, "query-parser")
         if _BackstopReject(text):
             return ParsedQuery(
                 semantic_query="",

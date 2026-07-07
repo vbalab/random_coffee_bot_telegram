@@ -23,3 +23,10 @@ async def NotifyOnShutdown() -> None:
         )
 
     logging.info("# Bot stopped.")
+
+
+async def NotifyOnLLMOutage(message: str) -> None:
+    """Broadcast an LLM-outage alert (e.g. Claude API out of credits) to all
+    admins. Wired as the alert hook in `recsys.searching.llm.alerts` at startup."""
+    for admin in await GetAdminIds():
+        await SendMessage(chat_id=admin, text=message)

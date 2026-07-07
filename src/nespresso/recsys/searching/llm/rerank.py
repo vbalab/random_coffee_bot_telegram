@@ -16,6 +16,7 @@ import logging
 from typing import Any
 
 from nespresso.core.configs.settings import settings
+from nespresso.recsys.searching.llm.alerts import ReportLLMError
 from nespresso.recsys.searching.llm.client import client
 
 _SYSTEM_PROMPT = """\
@@ -80,12 +81,13 @@ async def Rerank(query: str, candidates: list[tuple[int, str]]) -> list[int]:
             output_config={"format": {"type": "json_schema", "schema": _SCHEMA}},
         )
         order = json.loads(_FirstText(response)).get("ranking", [])
-    except Exception:
+    except Exception as exc:
         logging.warning(
             "Rerank failed; keeping hybrid order.",
             extra={"query": query, "n": len(candidates)},
             exc_info=True,
         )
+        await ReportLLMError(exc, "reranker")
         return ids
 
     seen: set[int] = set()

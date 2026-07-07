@@ -27,6 +27,7 @@ from nespresso.core.logs.bot import LoggerSetup
 from nespresso.db.session import EnsureDB, engine
 from nespresso.recsys.searching.client import CloseOpenSearchClient
 from nespresso.recsys.searching.index import EnsureOpenSearchIndex
+from nespresso.recsys.searching.llm.alerts import SetAdminAlertHook
 from nespresso.recsys.searching.search_pipeline import EnsureSearchPipeline
 
 
@@ -73,6 +74,10 @@ async def main() -> None:
     dp.shutdown.register(OnShutdown)
 
     SetExceptionHandlers()
+
+    # Alert admins if the Claude API goes down (e.g. out of credits). Wired before
+    # the blocking startup sync so an outage during enrichment is caught too.
+    SetAdminAlertHook(admin.NotifyOnLLMOutage)
 
     await TestEmail()
 
