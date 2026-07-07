@@ -65,7 +65,11 @@ _EMBED_BATCH = 256
 #     invisible to the feed-JSON hash, so the bump is what forces the re-embed.
 #     Also: the mynes/cv document sides were unified into ONE text+embedding, and
 #     the user's bio is folded into the indexed text + this hash (below).
-_DOC_VERSION = "6"
+# v7: enrichment changed from a trailing keyword blob to INLINE contextual
+#     annotation (world-knowledge glosses woven in beside each entity) —
+#     embedding-friendlier, and invisible to the feed-JSON hash, so the bump is
+#     what forces the re-embed.
+_DOC_VERSION = "7"
 
 # Columns written from the feed to `nes_user`. The directory feed now carries
 # `email` (-> nes_email), `sex`, and `programs` (with program/class_name derived

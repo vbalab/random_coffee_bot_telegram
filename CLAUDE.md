@@ -142,7 +142,7 @@ src/nespresso/
 │   │   │   │                 #   semantic_query + expanded_terms + filters; adaptive 1h
 │   │   │   │                 #   prompt caching + deterministic slur backstop
 │   │   │   ├── rerank.py    # Rerank() — compact ids-only reranker (fallback-safe)
-│   │   │   └── enrich.py    # EnrichTexts() — index-time world-knowledge expansion
+│   │   │   └── enrich.py    # EnrichTexts() — index-time inline world-knowledge annotation
 │   │   ├── client.py        # AsyncOpenSearch client + CloseOpenSearchClient()
 │   │   ├── index.py         # Index schema + EnsureOpenSearchIndex(), DocSide, structured f_* fields
 │   │   ├── filtering.py     # StructuredFields(), StructuredBoost(), CandidateCard() (structured pool)
@@ -645,7 +645,7 @@ All three calls use **Claude Haiku 4.5 at temperature 0** (deterministic, reprod
 
 **`Rerank(query, candidates)`** (`rerank.py`) — reorders the top `RERANK_CANDIDATES` (30) best-first against the **raw** query (compact ids-only output). Anchoring precision on the raw query is what lets `expanded_terms` widen recall safely. Identity fallback on any failure.
 
-**`EnrichTexts(texts)`** (`enrich.py`) — **index-time** world-knowledge expansion run during sync, before embedding: appends each profile's implicit industry / skills / domain terms (RU+EN) so a query for "HFT" matches an "XTX" profile. Shares the same `WORLD_KNOWLEDGE` taxonomy as the query-side parser, so both ends of the match speak one vocabulary. Bounded concurrency (`ENRICH_CONCURRENCY`); only re-runs on profiles whose `mynes_text_hash` changed.
+**`EnrichTexts(texts)`** (`enrich.py`) — **index-time inline** world-knowledge annotation run during sync, before embedding: rewrites each profile with short parenthetical glosses inserted **beside the entity they explain** — `Яндекс (big tech, IT)`, `XTX Markets (HFT, algorithmic trading)`, `ВШЭ (strong CS school)` — in RU+EN, so a query for "HFT" matches an "XTX" profile. Keeping the world-knowledge as coherent natural language (not a trailing keyword bag) makes the single profile vector embedding-friendly while still carrying every term for BM25 — **one artifact, both channels**. The annotation is **additive**: a token-retention guard (≥90% of the original's significant tokens must survive) falls back to the raw text if the model rewrote/dropped anything, so it stays fallback-safe (temperature 0). Shares the same `WORLD_KNOWLEDGE` taxonomy as the query-side parser, so both ends of the match speak one vocabulary. Bounded concurrency (`ENRICH_CONCURRENCY`); only re-runs on profiles whose `mynes_text_hash` changed.
 
 ---
 
@@ -964,5 +964,5 @@ The handlers for these are in `hub.py` (HubBack) and `admin.py` (PanelBack).
 | `expanded_terms` | Parser's query-side world-knowledge expansion (RU+EN), fed to a low-boost BM25 channel; gated by `QUERY_EXPANSION_ENABLED` |
 | `WORLD_KNOWLEDGE` | Shared employer→industry / role→skills taxonomy used by both the query parser and index-time `EnrichTexts` |
 | `Rerank` | Claude reranker that reorders the top-30 candidates against the raw query (temperature 0, fallback-safe) |
-| `EnrichTexts` | Index-time world-knowledge expansion of profile text before embedding (sync, `ENRICH_*` settings) |
+| `EnrichTexts` | Index-time **inline** world-knowledge annotation — additive parenthetical glosses woven in beside each entity, token-retention-guarded & fallback-safe (sync, `ENRICH_*` settings) |
 | `PARSER_CACHE_HOURLY_THRESHOLD` | Rolling 60-min query count at/above which the parser prompt gets a 1-hour `cache_control` (default 5) |
