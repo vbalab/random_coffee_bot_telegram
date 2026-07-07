@@ -89,7 +89,7 @@ async def CommandFindText(message: types.Message, state: FSMContext) -> None:
         )
         return
 
-    await SendMessage(
+    searching_message = await SendMessage(
         chat_id=message.chat.id,
         text=t(lang, "find.searching"),
     )
@@ -99,6 +99,17 @@ async def CommandFindText(message: types.Message, state: FSMContext) -> None:
 
     search = ScrollingSearch(exclude_nes_id=nes_id)
     page = await search.HybridSearch(message)
+
+    # The "searching, please wait" message was only a progress indicator — remove
+    # it now that the search is done.
+    if searching_message is not None:
+        try:
+            await searching_message.delete()
+        except Exception:
+            logging.debug(
+                f"Failed to delete searching message for chat_id={message.chat.id}",
+                exc_info=True,
+            )
 
     if page is None:
         await SendMessage(
