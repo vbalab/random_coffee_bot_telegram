@@ -26,19 +26,25 @@ fact and only INSERT context. `_PreservesOriginal` verifies that (near-total
 original-token retention); anything that fails validation — or any error/timeout —
 falls back to the un-annotated text, so a flaky Claude API never breaks indexing.
 
-The query side (`query_understanding.py`) expands queries against the SAME
-`WORLD_KNOWLEDGE` taxonomy, so both ends of the match speak one vocabulary. (The
-system prompt is below Haiku 4.5's 4096-token cache floor, so it is sent uncached
-— caching here would be a silent no-op.)
+The reference block is `DIRECTORY_KNOWLEDGE` — the real organizations, universities
+and roles that appear in our directory (frequency-grounded), so employers/schools
+are glossed with their ACTUAL industry (incl. Russian firms and rebrands a generic
+model gets wrong: Б1 = ex-EY, Технологии Доверия = ex-PwC, Alber Blanc / AIM Tech =
+HFT). Its industry vocabulary matches the query-side `WORLD_KNOWLEDGE`, so both ends
+of the match speak one language. It also lifts the system prompt past Haiku 4.5's
+4096-token cache floor, so it is prompt-cached for large (reindex) batches — see
+`EnrichTexts`.
 """
 
 import asyncio
 import logging
 import re
+from typing import Any
 
 from nespresso.core.configs.settings import settings
+from nespresso.recsys.searching.llm.alerts import ReportLLMError
 from nespresso.recsys.searching.llm.client import client
-from nespresso.recsys.searching.llm.world_knowledge import WORLD_KNOWLEDGE
+from nespresso.recsys.searching.llm.world_knowledge import DIRECTORY_KNOWLEDGE
 
 # Headroom for the whole annotated profile (original + inline glosses) so a long
 # profile is never truncated mid-annotation (which would fail validation and
@@ -49,6 +55,12 @@ _MAX_TOKENS = 2000
 # original's significant tokens. Below this we assume the model rewrote/dropped
 # content and fall back to the raw text.
 _MIN_TOKEN_RETENTION = 0.9
+
+# Prompt-cache the (~5k-token) system block only when the batch is at least this
+# big — a reindex, where the cache write amortizes across thousands of calls. Below
+# it (a small incremental sync or a single bio-save) caching would pay a 5-min
+# cache write that is never read again.
+_CACHE_MIN_BATCH = 16
 
 _SYSTEM_PROMPT = f"""\
 You annotate a New Economic School (NES / РЭШ) alumni profile with brief \
@@ -85,9 +97,12 @@ needs none. If the SAME named employer or school appears more than once, gloss \
 ONLY its first occurrence and leave the later mentions exactly as they were.
 - Output ONLY the annotated profile text, nothing else.
 
-Reference knowledge (map named employers to their category; both languages):
+Reference knowledge — the organizations, universities and roles that appear in \
+this alumni network, with their real industry / category. Use it to gloss \
+employers and schools accurately, in both languages (it lists Russian firms and \
+rebrands a generic model gets wrong — e.g. Б1 = ex-EY, Alber Blanc = HFT):
 
-{WORLD_KNOWLEDGE}
+{DIRECTORY_KNOWLEDGE}
 
 Example
 Input:
@@ -102,9 +117,28 @@ Current position: Analyst at McKinsey (стратегический консал
 consulting)
 Professional expertise: стратегия, консалтинг
 Post-NES education: МГУ, экономический факультет (МГУ им. Ломоносова / Lomonosov \
-Moscow State University, top economics school)"""
+Moscow State University, top economics school)
 
-_SYSTEM = [{"type": "text", "text": _SYSTEM_PROMPT}]
+Another example
+Input:
+Смирнова Анна
+Current position: Quant at Alber Blanc
+Previous position: Auditor at Б1
+
+Output:
+Смирнова Анна
+Current position: Quant (алготрейдинг, статистика / quantitative trading, \
+statistics) at Alber Blanc (высокочастотный трейдинг, HFT / high-frequency trading \
+firm)
+Previous position: Auditor at Б1 (ex-EY Russia, Big-4 аудит / Big-4 audit)"""
+
+def _BuildSystem(cache: bool) -> list[dict[str, Any]]:
+    """The system block, optionally prompt-cached (5-min ephemeral). Caching pays
+    off only across a large batch (a reindex), so callers gate it by batch size."""
+    block: dict[str, Any] = {"type": "text", "text": _SYSTEM_PROMPT}
+    if cache:
+        block["cache_control"] = {"type": "ephemeral"}
+    return [block]
 
 _TOKEN_RE = re.compile(r"\w+", re.UNICODE)
 
@@ -131,7 +165,9 @@ def _PreservesOriginal(original: str, enriched: str) -> bool:
     return len(kept) / len(orig) >= _MIN_TOKEN_RETENTION
 
 
-async def _EnrichOne(text: str, semaphore: asyncio.Semaphore) -> str:
+async def _EnrichOne(
+    text: str, semaphore: asyncio.Semaphore, system: list[dict[str, Any]]
+) -> str:
     """Return the inline-annotated profile. Empty inputs and any failure or
     unfaithful (non-additive) output fall back to the original text."""
     if not text.strip():
@@ -144,7 +180,7 @@ async def _EnrichOne(text: str, semaphore: asyncio.Semaphore) -> str:
                 model=settings.ENRICH_MODEL,
                 max_tokens=_MAX_TOKENS,
                 temperature=0,  # deterministic: reproducible index, easier to debug
-                system=_SYSTEM,
+                system=system,
                 messages=[{"role": "user", "content": text}],
             )
             out = _FirstText(response).strip()
@@ -159,8 +195,9 @@ async def _EnrichOne(text: str, semaphore: asyncio.Semaphore) -> str:
                 },
             )
             return text
-        except Exception:
+        except Exception as exc:
             logging.warning("Profile enrichment failed; using raw text.", exc_info=True)
+            await ReportLLMError(exc, "enrichment")
             return text
 
 
@@ -168,9 +205,14 @@ async def EnrichTexts(texts: list[str]) -> list[str]:
     """
     Return each profile text with inline world-knowledge glosses added (aligned
     1:1 with input, fallback-safe). Bounded concurrency keeps us within API limits.
+
+    The system prompt is prompt-cached only for large batches (a reindex), where
+    the cache write amortizes across thousands of calls; a small incremental sync
+    or a lone bio-save skips it (see `_CACHE_MIN_BATCH`).
     """
     if not settings.ENRICH_ENABLED or not texts:
         return texts
 
+    system = _BuildSystem(cache=len(texts) >= _CACHE_MIN_BATCH)
     semaphore = asyncio.Semaphore(settings.ENRICH_CONCURRENCY)
-    return await asyncio.gather(*(_EnrichOne(t, semaphore) for t in texts))
+    return await asyncio.gather(*(_EnrichOne(t, semaphore, system) for t in texts))

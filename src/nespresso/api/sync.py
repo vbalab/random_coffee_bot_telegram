@@ -69,7 +69,11 @@ _EMBED_BATCH = 256
 #     annotation (world-knowledge glosses woven in beside each entity) —
 #     embedding-friendlier, and invisible to the feed-JSON hash, so the bump is
 #     what forces the re-embed.
-_DOC_VERSION = "7"
+# v8: enrichment prompt now uses the data-grounded DIRECTORY_KNOWLEDGE (real orgs /
+#     universities / roles from our directory) for richer, more accurate glosses,
+#     and is prompt-cached for reindex batches. Enrichment output isn't hashed, so
+#     the bump is what forces the re-embed.
+_DOC_VERSION = "8"
 
 # Columns written from the feed to `nes_user`. The directory feed now carries
 # `email` (-> nes_email), `sex`, and `programs` (with program/class_name derived
