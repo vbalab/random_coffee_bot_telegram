@@ -4,11 +4,11 @@ from nespresso.recsys.searching.client import client
 
 PIPELINE_NAME = "nespresso_normalization_pipeline"
 
-# 4 subqueries: mynes_text BM25, mynes_embedding KNN, cv_text BM25, cv_embedding KNN.
-# The `cv` side (user-written bio) is empty for most alumni, so min-max
-# normalizing it over a tiny populated set injects noise — downweight it and let
-# the directory-sourced `mynes` side carry the ranking.
-_WEIGHTS = [0.35, 0.35, 0.15, 0.15]
+# 2 subqueries over the single unified profile field: `text` BM25 + `embedding`
+# KNN. The directory self-description and the user's bio are one document now, so
+# every doc has exactly one populated text+embedding — the old cv-side
+# down-weighting (needed because that lane was sparsely populated) is gone.
+_WEIGHTS = [0.5, 0.5]
 
 
 async def EnsureSearchPipeline() -> None:

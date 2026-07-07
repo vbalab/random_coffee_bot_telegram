@@ -9,11 +9,6 @@ from nespresso.recsys.searching.preprocessing.model import EMBEDDING_LEN
 INDEX_NAME = "nes_users"
 
 
-class DocSide(str, Enum):
-    mynes = "mynes"
-    cv = "cv"
-
-
 @dataclass
 class DocAttr:
     text: str
@@ -54,34 +49,49 @@ async def EnsureOpenSearchIndex() -> bool:
     """
     Create the index if it is missing, and ensure the structured `f_*` field
     mappings exist (so indices created before those fields existed map them as
-    keyword, not dynamically as text). Returns True if the index was just created
-    (so the directory sync can force a full re-index), False if it already existed.
+    keyword, not dynamically as text).
+
+    If a LEGACY two-sided mapping is found (`mynes_text` / `cv_text` from before
+    the profile sides were unified into one `text` + `embedding`), the index is
+    dropped and recreated: the field NAMES changed, so put_mapping cannot
+    repurpose them, and a stale/absent KNN field would make vector search
+    silently return nothing. A full re-embed is unavoidable anyway (the unified
+    text is new content); the startup sync is blocking before polling, so an
+    empty-then-repopulated index is fine.
+
+    Returns True if the index was (re)created (so the directory sync forces a
+    full re-index), False if a current unified index already existed.
     """
-    text_config = {"type": "text"}
-    embedding_config = {"type": "knn_vector", "dimension": EMBEDDING_LEN}
-
     if await client.indices.exists(index=INDEX_NAME):
-        await client.indices.clear_cache(index=INDEX_NAME, query=True)
-        # Ensure the structured fields are mapped as keyword on pre-existing
-        # indices (no-op if already present; the next sync populates them).
-        try:
-            await client.indices.put_mapping(
-                index=INDEX_NAME, body={"properties": _STRUCTURED_PROPERTIES}
-            )
-        except Exception:
+        mapping = await client.indices.get_mapping(index=INDEX_NAME)
+        props = mapping.get(INDEX_NAME, {}).get("mappings", {}).get("properties", {})
+        legacy = "mynes_text" in props or DocAttr.Field.text.value not in props
+        if legacy:
             logging.warning(
-                "Could not ensure structured field mappings.", exc_info=True
+                "Legacy OpenSearch mapping detected; recreating index unified."
             )
-        return False
+            await client.indices.delete(index=INDEX_NAME)
+            # fall through to create the unified index below
+        else:
+            await client.indices.clear_cache(index=INDEX_NAME, query=True)
+            # Ensure the structured fields are mapped as keyword on pre-existing
+            # indices (no-op if already present; the next sync populates them).
+            try:
+                await client.indices.put_mapping(
+                    index=INDEX_NAME, body={"properties": _STRUCTURED_PROPERTIES}
+                )
+            except Exception:
+                logging.warning(
+                    "Could not ensure structured field mappings.", exc_info=True
+                )
+            return False
 
-    fields = [
-        (DocSide.mynes, DocAttr.Field.text, text_config),
-        (DocSide.mynes, DocAttr.Field.embedding, embedding_config),
-        (DocSide.cv, DocAttr.Field.text, text_config),
-        (DocSide.cv, DocAttr.Field.embedding, embedding_config),
-    ]
     properties: dict = {
-        f"{side.value}_{field.value}": config for side, field, config in fields
+        DocAttr.Field.text.value: {"type": "text"},
+        DocAttr.Field.embedding.value: {
+            "type": "knn_vector",
+            "dimension": EMBEDDING_LEN,
+        },
     }
     properties.update(_STRUCTURED_PROPERTIES)
 

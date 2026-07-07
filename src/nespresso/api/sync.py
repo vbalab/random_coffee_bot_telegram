@@ -38,8 +38,9 @@ from nespresso.db.models.nes_user import NesUser
 from nespresso.db.models.schemas.nes_user import NesUserIn
 from nespresso.db.services.user_context import GetUserContextService
 from nespresso.recsys.searching.document import (
+    BuildProfileText,
     BulkDeleteOpenSearch,
-    BulkUpsertMynesOpenSearch,
+    BulkUpsertProfilesOpenSearch,
     PresentDocIds,
 )
 from nespresso.recsys.searching.filtering import StructuredFields
@@ -59,7 +60,12 @@ _EMBED_BATCH = 256
 # v5: SearchText now also includes the education `department` (the feed populated
 #     post_nes_education); a SearchText change is invisible to the feed-JSON hash,
 #     so the version bump is what forces the re-embed.
-_DOC_VERSION = "5"
+# v6: SearchText switched to role-framed labels ("Current position:", "Post-NES
+#     education:", …) so the encoder can tell a school from an employer — again
+#     invisible to the feed-JSON hash, so the bump is what forces the re-embed.
+#     Also: the mynes/cv document sides were unified into ONE text+embedding, and
+#     the user's bio is folded into the indexed text + this hash (below).
+_DOC_VERSION = "6"
 
 # Columns written from the feed to `nes_user`. The directory feed now carries
 # `email` (-> nes_email), `sex`, and `programs` (with program/class_name derived
@@ -195,15 +201,26 @@ async def _RunSync(report: SyncReport) -> None:
     now = report.started_at
     fresh_ids = list(by_id.keys())
 
-    # Content hash per profile, used to skip unchanged work. It is taken from the
-    # canonical pydantic JSON (fixed field order) — NOT from FullDescription,
-    # whose `set()`-based dedup reorders lines per process (PYTHONHASHSEED) and
-    # would mark profiles "changed" after every restart.
+    ctx = await GetUserContextService()
+    # Each user's bio (TgUser.about) is folded into the unified profile text AND
+    # the change hash, so fetch it up front for every listed alumnus (a small
+    # set — only registered bot users who wrote an About). Folding the bio in is
+    # what makes a bio edit self-healing via sync, and what restores a
+    # re-appearing user's bio automatically.
+    abouts = await ctx.GetAboutByNesIds(fresh_ids)
+
+    # Content hash per profile, used to skip unchanged work. Taken over the RAW
+    # source — canonical pydantic JSON (fixed field order) + the raw bio + the
+    # doc version — NOT the enriched/embedded text (enrichment runs later and is
+    # non-deterministic, so hashing its output would re-embed every run) and NOT
+    # FullDescription (whose set()-based dedup reorders lines per process).
     models: dict[int, NesUser] = {}
     new_hashes: dict[int, str] = {}
     for nes_id, user in by_id.items():
         models[nes_id] = _ToModel(user)
-        new_hashes[nes_id] = _Hash(f"{_DOC_VERSION}:{user.model_dump_json()}")
+        new_hashes[nes_id] = _Hash(
+            f"{_DOC_VERSION}:{user.model_dump_json()}:{abouts.get(nes_id, '')}"
+        )
 
     # Self-heal the search index. EnsureOpenSearchIndex recreates it if the data
     # volume was reset. Then reconcile against the documents ACTUALLY present:
@@ -216,7 +233,6 @@ async def _RunSync(report: SyncReport) -> None:
     await EnsureOpenSearchIndex()
     present_ids = await PresentDocIds()
 
-    ctx = await GetUserContextService()
     old_hashes = await ctx.GetNesUserHashes(fresh_ids)
     # "changed" = new, modified, previously-delisted (delist clears the stored
     # hash), OR missing from the index. Unchanged-listed-and-present profiles need
@@ -243,11 +259,12 @@ async def _RunSync(report: SyncReport) -> None:
             f"{len(present_ids)} docs, feed has {len(fresh_ids)} listed)."
         )
 
-    # Embed + index only changed profiles, batch by batch. Each batch is first
-    # enriched with world-knowledge context (off the search hot path), then the
-    # ENRICHED text is what we embed + index, so indirect queries (e.g. "HFT"
-    # matching an "XTX" profile) retrieve correctly.
-    texts = {nid: models[nid].SearchText() for nid in changed}
+    # Embed + index only changed profiles, batch by batch. The unified text
+    # (directory SearchText + the user's bio) is first enriched with
+    # world-knowledge context (off the search hot path), then the ENRICHED text
+    # is what we embed + index, so indirect queries (e.g. "HFT" matching an "XTX"
+    # profile) retrieve correctly.
+    texts = {nid: BuildProfileText(models[nid], abouts.get(nid)) for nid in changed}
     failed_index: set[int] = set()
     for batch_start in range(0, len(changed), _EMBED_BATCH):
         batch = changed[batch_start : batch_start + _EMBED_BATCH]
@@ -258,7 +275,7 @@ async def _RunSync(report: SyncReport) -> None:
             (nid, enriched[i], embeddings[i], StructuredFields(models[nid]))
             for i, nid in enumerate(batch)
         ]
-        failed = await BulkUpsertMynesOpenSearch(items)
+        failed = await BulkUpsertProfilesOpenSearch(items)
         failed_index |= failed
         report.reindexed += len(batch) - len(failed)
     report.index_errors = len(failed_index)

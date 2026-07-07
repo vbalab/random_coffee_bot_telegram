@@ -12,7 +12,7 @@ from nespresso.bot.lib.message.io import SendMessage
 from nespresso.core.configs.title_store import GetTitle
 from nespresso.db.models.tg_user import TgUser
 from nespresso.db.services.user_context import GetUserContextService
-from nespresso.recsys.searching.document import UpsertAboutOpenSearch
+from nespresso.recsys.searching.profile_write import RebuildProfileForBio
 
 router = Router()
 
@@ -109,7 +109,10 @@ async def AboutWriteAboutMessage(message: types.Message, state: FSMContext) -> N
 
     nes_id = await ctx.GetTgUser(chat_id, TgUser.nes_id)
     if nes_id is not None:
-        await UpsertAboutOpenSearch(nes_id, message.text)
+        # Rebuild the whole unified profile doc (directory text + this bio) — the
+        # bot's bio is one part of a single indexed document now, not a separate
+        # "cv side". Best-effort: failures self-heal on the next sync.
+        await RebuildProfileForBio(nes_id, message.text)
 
     await SendMessage(
         chat_id=chat_id,

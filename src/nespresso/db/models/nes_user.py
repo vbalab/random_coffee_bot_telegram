@@ -174,15 +174,49 @@ class NesUser(Base):
 
         return ".\n".join(sections)
 
+    def _SearchWork(self, label: str, work: object) -> str | None:
+        """One role-labeled work line: "<label>: <position> at <company>, <industry>"."""
+        if not isinstance(work, dict):
+            return None
+        position = str(work.get("position") or "").strip()
+        company = str(work.get("company") or "").strip()
+        who = " at ".join(p for p in (position, company) if p)
+        extra = ", ".join(
+            str(work.get(k)).strip()
+            for k in ("industry", "department")
+            if work.get(k) and str(work.get(k)).strip()
+        )
+        body = ", ".join(p for p in (who, extra) if p)
+        return f"{label}: {body}" if body else None
+
+    def _SearchEducation(
+        self, label: str, edu: object, keys: tuple[str, ...]
+    ) -> str | None:
+        """One role-labeled education line, e.g. "Post-NES education: <uni>, <dept>"."""
+        if not isinstance(edu, dict):
+            return None
+        body = ", ".join(
+            str(edu[k]).strip() for k in keys if edu.get(k) and str(edu[k]).strip()
+        )
+        return f"{label}: {body}" if body else None
+
     def SearchText(self) -> str:
         """
-        Clean natural-language profile text for embedding + BM25 indexing.
+        Role-framed profile text for embedding + BM25 indexing.
 
-        Unlike FullDescription this drops the English section labels ("Main work:",
-        "Program:", …) that repeat on every document and add noise to the vector —
-        each line is just the meaningful content.
+        Each fact is one uniform ``Label: value`` line whose label names the
+        person→entity RELATION. A bare "Высшая школа экономики" line leaves the
+        encoder guessing (a school? an employer? current or past?); "Post-NES
+        education: Высшая школа экономики" resolves it. These labels are a small,
+        fixed, role-DISCRIMINATIVE vocabulary — the opposite of FullDescription's
+        content-free section headers: they partition the record by meaning and
+        echo how queries are phrased ("кто работает в…", "PhD из…", "учился в…"),
+        which is what a natural-language-trained encoder aligns on. They also cue
+        CLS pooling to weight the professional core over softer interest/market
+        fields. `sex`/`email` stay out (structured-only / PII).
         """
         lines: list[str] = []
+
         if self.name:
             lines.append(self.name)
 
@@ -193,53 +227,57 @@ class NesUser(Base):
             loc.append(self.country)
         loc_line = ", ".join(p for p in loc if p)
         if loc_line:
-            lines.append(loc_line)
+            lines.append(f"Location: {loc_line}")
 
-        # NES program(s) + class year, so "Магистр экономики 2009" matches by text
-        # (sex is deliberately NOT embedded — it's a structured-only filter).
-        prog_line = ", ".join(
-            f"{p.get('name', '')} {p.get('year', '')}".strip()
-            for p in (self.programs or [])
-            if isinstance(p, dict) and p.get("name")
-        )
-        if prog_line:
-            lines.append(prog_line)
+        # NES program(s) + class year.
+        progs: list[str] = []
+        for p in self.programs or []:
+            if isinstance(p, dict) and p.get("name"):
+                year = p.get("year")
+                progs.append(f"{p['name']} ({year})" if year else str(p["name"]))
+        if progs:
+            lines.append("NES program: " + ", ".join(progs))
 
-        works = [self.main_work] + (self.additional_work or [])
-        for w in works:
-            if isinstance(w, dict):
-                parts = [
-                    w.get(k)
-                    for k in ("position", "company", "industry", "department")
-                ]
-                wl = ", ".join(p for p in parts if p)
-                if wl:
-                    lines.append(wl)
+        # Employment — main_work is the CURRENT role, additional_work is PRIOR
+        # experience (mirrors the card's Текущая занятость / Предыдущий опыт).
+        current = self._SearchWork("Current position", self.main_work)
+        if current:
+            lines.append(current)
+        for work in self.additional_work or []:
+            previous = self._SearchWork("Previous position", work)
+            if previous:
+                lines.append(previous)
 
-        for vals in (
-            self.professional_expertise,
-            self.industry_expertise,
-            self.country_expertise,
-            self.hobbies,
+        for label, vals in (
+            ("Professional expertise", self.professional_expertise),
+            ("Industry expertise", self.industry_expertise),
+            ("Market expertise", self.country_expertise),
         ):
-            if vals:
-                joined = ", ".join(v for v in vals if v)
-                if joined:
-                    lines.append(joined)
+            joined = ", ".join(v for v in (vals or []) if v)
+            if joined:
+                lines.append(f"{label}: {joined}")
 
-        edus = (self.pre_nes_education or []) + (self.post_nes_education or [])
-        for e in edus:
-            if isinstance(e, dict):
-                parts = [
-                    e.get(k)
-                    for k in (
-                        "university", "department", "specialty", "specialization",
-                        "program", "degree",
-                    )
-                ]
-                el = ", ".join(p for p in parts if p)
-                if el:
-                    lines.append(el)
+        # Education, split pre/post-NES so the encoder can tell them apart.
+        for label, edus, keys in (
+            (
+                "Pre-NES education",
+                self.pre_nes_education,
+                ("university", "department", "specialty", "specialization"),
+            ),
+            (
+                "Post-NES education",
+                self.post_nes_education,
+                ("university", "department", "program", "degree"),
+            ),
+        ):
+            for edu in edus or []:
+                line = self._SearchEducation(label, edu, keys)
+                if line:
+                    lines.append(line)
+
+        hobbies = ", ".join(v for v in (self.hobbies or []) if v)
+        if hobbies:
+            lines.append(f"Interests: {hobbies}")
 
         return "\n".join(lines)
 

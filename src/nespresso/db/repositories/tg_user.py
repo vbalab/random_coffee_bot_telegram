@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Sequence
 from typing import TypeVar, overload
 
 from sqlalchemy import select, update
@@ -15,6 +16,10 @@ from nespresso.db.repositories.checking import (
 )
 
 T = TypeVar("T")
+
+# asyncpg caps a statement at 32767 bound params; ids-only IN scans are tiny, so
+# a generous chunk keeps round-trips down.
+_SELECT_CHUNK = 1000
 
 
 class TgUserRepository:
@@ -125,6 +130,31 @@ class TgUserRepository:
             column=TgUser.chat_id,
         )
         return int(result[0]) if result else None
+
+    async def GetAboutByNesIds(self, nes_ids: Sequence[int]) -> dict[int, str]:
+        """
+        Map ``nes_id -> non-empty TgUser.about`` for the given ids. Used by the
+        directory sync to fold each user's bio into the unified profile text and
+        change hash.
+
+        Deterministic on collisions: if two chat_ids ever bound the same nes_id,
+        ``ORDER BY chat_id`` makes the winning value stable across syncs, so the
+        folded-bio hash cannot flap and cause spurious re-embeds.
+        """
+        ids = list(nes_ids)
+        out: dict[int, str] = {}
+        async with self.session() as session:
+            for start in range(0, len(ids), _SELECT_CHUNK):
+                chunk = ids[start : start + _SELECT_CHUNK]
+                result = await session.execute(
+                    select(TgUser.nes_id, TgUser.about)
+                    .where(TgUser.nes_id.in_(chunk), TgUser.about.isnot(None))
+                    .order_by(TgUser.chat_id)
+                )
+                for nes_id, about in result.all():
+                    if nes_id is not None and about and about.strip():
+                        out[int(nes_id)] = about
+        return out
 
     # ----- Update -----
 

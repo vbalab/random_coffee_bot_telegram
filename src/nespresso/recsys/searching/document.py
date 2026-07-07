@@ -3,50 +3,51 @@ from typing import Any
 
 from opensearchpy.exceptions import NotFoundError
 
+from nespresso.db.models.nes_user import NesUser
 from nespresso.recsys.searching.client import client
-from nespresso.recsys.searching.index import INDEX_NAME, DocAttr, DocSide
-from nespresso.recsys.searching.preprocessing.keywords import ExtractKeywords
+from nespresso.recsys.searching.index import INDEX_NAME, DocAttr
 
-# Number of documents per `_bulk` request. Each mynes doc carries a 768-float
+# Number of documents per `_bulk` request. Each doc carries a 768-float
 # embedding (~6 KB serialized), so a few hundred per request keeps bodies sane.
 _BULK_CHUNK = 250
 
-_MYNES_TEXT_FIELD = f"{DocSide.mynes.value}_{DocAttr.Field.text.value}"
-_MYNES_EMBEDDING_FIELD = f"{DocSide.mynes.value}_{DocAttr.Field.embedding.value}"
+_TEXT_FIELD = DocAttr.Field.text.value
+_EMBEDDING_FIELD = DocAttr.Field.embedding.value
 
 
-async def UpsertTextOpenSearch(
-    nes_id: int,
-    side: DocSide,
-    text: str,
-    extra: dict[str, Any] | None = None,
+def BuildProfileText(nes_user: NesUser, about: str | None) -> str:
+    """
+    The single retrieval text for a profile: the directory self-description
+    (`SearchText`) followed by the user's own bio (`TgUser.about`), if any.
+
+    This is the pre-enrichment, pre-embedding text and is what the sync's change
+    hash is taken over, so BOTH writers (directory sync and the bio-save path)
+    MUST build it identically — hence one shared function. `SearchText` is
+    deterministic (no set()-based reordering), so the same (profile, bio) always
+    yields the same string.
+    """
+    base = nes_user.SearchText()
+    bio = (about or "").strip()
+    if not bio:
+        return base
+    return f"{base}\n\n{bio}" if base else bio
+
+
+async def UpsertProfileOpenSearch(
+    nes_id: int, text: str, embedding: list[float], fields: dict[str, Any]
 ) -> None:
-    attr = DocAttr.FromText(text)
+    """
+    Write the whole unified document (text + embedding + structured `f_*`
+    fields) with a FULL replace (`index`, not a partial `update`). OpenSearch is
+    a pure projection of Postgres now — the doc is always rebuilt from the DB —
+    so a full replace correctly drops fields that no longer apply.
+    """
+    doc: dict[str, Any] = {_TEXT_FIELD: text, _EMBEDDING_FIELD: embedding}
+    doc.update(fields)
 
-    doc: dict[str, Any] = {
-        f"{side.value}_{DocAttr.Field.text.value}": attr.text,
-        f"{side.value}_{DocAttr.Field.embedding.value}": attr.embedding,
-    }
-    if extra:
-        doc.update(extra)
+    await client.index(index=INDEX_NAME, id=nes_id, body=doc)
 
-    body = {"doc_as_upsert": True, "doc": doc}
-
-    await client.update(
-        index=INDEX_NAME,
-        id=nes_id,
-        body=body,
-    )
-
-    logging.info(
-        f"nes_id={nes_id} :: Document of '{side.value}' side upserted with text: {repr(text)}."
-    )
-
-
-async def UpsertAboutOpenSearch(nes_id: int, about_text: str) -> None:
-    keywords = ExtractKeywords(about_text)
-    enriched = f"{about_text}\n{keywords}" if keywords else about_text
-    await UpsertTextOpenSearch(nes_id, DocSide.cv, enriched)
+    logging.info(f"nes_id={nes_id} :: Profile document upserted: {text!r}.")
 
 
 async def DeleteUserOpenSearch(nes_id: int) -> None:
@@ -105,15 +106,15 @@ async def PresentDocIds() -> set[int]:
     return ids
 
 
-async def BulkUpsertMynesOpenSearch(
+async def BulkUpsertProfilesOpenSearch(
     items: list[tuple[int, str, list[float], dict[str, Any]]],
 ) -> set[int]:
     """
-    Bulk-upsert the `mynes` side (text + embedding) plus the structured `f_*`
-    filter fields for many users at once, used by the directory sync.
-    `doc_as_upsert` preserves any existing `cv` (user bio) side. Returns the set
-    of nes_ids whose write FAILED, so the caller can avoid recording a hash for
-    them (forcing a retry next sync).
+    Bulk-write the whole unified document (text + embedding + structured `f_*`
+    fields) for many users at once, used by the directory sync. Each op is a
+    FULL replace (`index`) — the doc is rebuilt from the DB every time, so there
+    is no other side to preserve. Returns the set of nes_ids whose write FAILED,
+    so the caller can avoid recording a hash for them (forcing a retry next sync).
     """
     failed: set[int] = set()
     if not items:
@@ -124,27 +125,27 @@ async def BulkUpsertMynesOpenSearch(
         body: list[dict[str, Any]] = []
         for nes_id, text, embedding, fields in chunk:
             doc: dict[str, Any] = {
-                _MYNES_TEXT_FIELD: text,
-                _MYNES_EMBEDDING_FIELD: embedding,
+                _TEXT_FIELD: text,
+                _EMBEDDING_FIELD: embedding,
             }
             doc.update(fields)
-            body.append({"update": {"_index": INDEX_NAME, "_id": nes_id}})
-            body.append({"doc": doc, "doc_as_upsert": True})
+            body.append({"index": {"_index": INDEX_NAME, "_id": nes_id}})
+            body.append(doc)
 
         response = await client.bulk(body=body)
         if response.get("errors"):
             for item in response.get("items", []):
-                op = item.get("update", {})
+                op = item.get("index", {})
                 if op.get("error"):
                     failed.add(int(op["_id"]))
                     logging.warning(
-                        f"Bulk mynes upsert failed for nes_id={op.get('_id')}: "
+                        f"Bulk profile upsert failed for nes_id={op.get('_id')}: "
                         f"{op.get('error')}"
                     )
 
     indexed = len(items) - len(failed)
     logging.info(
-        f"BulkUpsertMynesOpenSearch: {indexed} indexed, {len(failed)} failed."
+        f"BulkUpsertProfilesOpenSearch: {indexed} indexed, {len(failed)} failed."
     )
     return failed
 

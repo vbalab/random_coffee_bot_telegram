@@ -12,9 +12,6 @@ from nespresso.core.configs.settings import settings
 from nespresso.db.models.nes_user import NesUser
 from nespresso.db.models.schemas.nes_user import NesUserIn
 from nespresso.db.services.user_context import GetUserContextService
-from nespresso.recsys.searching.document import UpsertTextOpenSearch
-from nespresso.recsys.searching.filtering import StructuredFields
-from nespresso.recsys.searching.index import DocSide
 
 _HTTP_TIMEOUT = httpx.Timeout(connect=10.0, read=20.0, write=20.0, pool=10.0)
 # The directory feed (`/user/list`) is a single multi-MB response; give it room.
@@ -138,10 +135,11 @@ async def _FetchNesUserData(nes_email: str) -> dict[str, Any]:
 
 async def GetNesUserFromMyNES(nes_email: str) -> NesUserIn | None:
     """
-    Fetch a single user by email, persist their profile (DB + OpenSearch) and
-    return the parsed model. The `mynes_text_hash` is intentionally left unset
-    so the next directory sync (re)embeds them once — this keeps the OpenSearch
-    document authoritative without this path having to guarantee indexing.
+    Fetch a single user by email, persist their profile to the DB and return the
+    parsed model. It does NOT write OpenSearch: `mynes_text_hash` is left unset,
+    so the next directory sync (re)embeds them into the unified index once — this
+    keeps OpenSearch a pure projection of the DB with a single indexing path
+    (the sync), rather than a second partial writer here.
     """
     data = await _FetchNesUserData(nes_email)
 
@@ -164,13 +162,9 @@ async def GetNesUserFromMyNES(nes_email: str) -> NesUserIn | None:
         alchemy_nes_user.nes_email = nes_email
         ctx = await GetUserContextService()
         await ctx.UpsertNesUser(alchemy_nes_user)
-
-        await UpsertTextOpenSearch(
-            nes_id=nes_user.nes_id,
-            side=DocSide.mynes,
-            text=alchemy_nes_user.SearchText(),
-            extra=StructuredFields(alchemy_nes_user),
-        )
+        # No OpenSearch write here — the sync's missing-doc reconciliation
+        # (PresentDocIds) indexes this profile into the unified index within the
+        # hour, keeping a single indexing path.
 
     return nes_user
 

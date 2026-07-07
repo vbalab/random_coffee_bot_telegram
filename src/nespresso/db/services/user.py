@@ -24,6 +24,7 @@ class UserService:
         self.GetTgUsersOnCondition = self.tg_user_repo.GetTgUsersOnCondition
         self.GetTgUser = self.tg_user_repo.GetTgUser
         self.GetTgChatIdBy = self.tg_user_repo.GetChatIdBy
+        self.GetAboutByNesIds = self.tg_user_repo.GetAboutByNesIds
 
         # - Nes -
         self.GetNesUsersOnCondition = self.nes_user_repo.GetNesUsersOnCondition

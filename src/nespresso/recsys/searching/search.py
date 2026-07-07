@@ -19,7 +19,7 @@ from nespresso.recsys.searching.filtering import (
     StructuredBoost,
     _uni_substrings,
 )
-from nespresso.recsys.searching.index import INDEX_NAME, DocAttr, DocSide
+from nespresso.recsys.searching.index import INDEX_NAME, DocAttr
 from nespresso.recsys.searching.llm.query_understanding import ParseQuery, QueryFilters
 from nespresso.recsys.searching.llm.rerank import Rerank
 from nespresso.recsys.searching.preprocessing.embedding import CreateEmbedding
@@ -66,6 +66,10 @@ class ScrollingSearch:
     ) -> dict[Any, Any]:
         """Hybrid BM25 + KNN retrieval on the cleaned semantic query.
 
+        Two sub-queries over the single unified profile field: BM25 on `text` +
+        KNN on `embedding`. (Directory self-description and user bio are one
+        document now, so there is no second "cv side" lane.)
+
         The query-side world-knowledge `expanded` terms ride a separate, heavily
         down-weighted should-clause (`_EXPANSION_BOOST`): they widen *lexical*
         recall for narrow queries without letting world-knowledge tokens outvote
@@ -86,19 +90,10 @@ class ScrollingSearch:
 
         hybrid_query: dict[str, Any] = {
             "queries": [
-                _text_query(f"{DocSide.mynes.value}_{DocAttr.Field.text.value}"),
+                _text_query(DocAttr.Field.text.value),
                 {
                     "knn": {
-                        f"{DocSide.mynes.value}_{DocAttr.Field.embedding.value}": {
-                            "vector": embedding,
-                            "k": _KNN_LIMIT,
-                        }
-                    }
-                },
-                _text_query(f"{DocSide.cv.value}_{DocAttr.Field.text.value}"),
-                {
-                    "knn": {
-                        f"{DocSide.cv.value}_{DocAttr.Field.embedding.value}": {
+                        DocAttr.Field.embedding.value: {
                             "vector": embedding,
                             "k": _KNN_LIMIT,
                         }
