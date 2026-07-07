@@ -25,8 +25,7 @@ from nespresso.bot.lib.message.i18n import (
     SetUserLanguage,
     t,
 )
-from nespresso.bot.lib.message.io import ContextIO, SendDocument, SendMessage
-from nespresso.core.configs.paths import PATH_TERMS_OF_USE
+from nespresso.bot.lib.message.io import ContextIO, SendMessage
 from nespresso.db.models.tg_user import TgUser
 from nespresso.db.services.user_context import GetUserContextService
 from nespresso.recsys.searching.document import UpsertAboutOpenSearch
@@ -52,7 +51,6 @@ class StartStates(StatesGroup):
     ChooseLanguage = State()
     EmailGet = State()
     EmailConfirm = State()
-    Terms = State()
     AboutNow = State()
 
 
@@ -343,49 +341,8 @@ async def CommandStartEmailConfirm(message: types.Message, state: FSMContext) ->
 
     ctx = await GetUserContextService()
     await ctx.UpdateTgUser(chat_id=chat_id, column=TgUser.nes_id, value=nes_id)
-
-    await SendMessage(
-        chat_id=chat_id,
-        text=t(lang, "common.thanks"),
-    )
-
-    button = KeyboardButton(text=t(lang, "start.accept_button"))
-    keyboard = ReplyKeyboardMarkup(keyboard=[[button]], resize_keyboard=True)
-
-    # TODO: create actual service of service
-    await SendDocument(
-        chat_id=chat_id,
-        document=types.FSInputFile(PATH_TERMS_OF_USE),
-        caption=t(lang, "start.terms_caption"),
-        reply_markup=keyboard,
-    )
-
-    await state.set_state(StartStates.Terms)
-    await state.set_data({"button_text": button.text})
-
-
-@router.message(StateFilter(StartStates.Terms), F.content_type == "text")
-async def CommandStartTerms(message: types.Message, state: FSMContext) -> None:
-    assert message.text is not None
-
-    chat_id = message.chat.id
-    lang = await GetUserLanguage(chat_id)
-    data = await state.get_data()
-
-    if message.text != data["button_text"]:
-        await SendMessage(
-            chat_id=chat_id,
-            text=t(lang, "start.terms_not_accepted"),
-            context=ContextIO.UserFailed,
-        )
-        return
-
-    ctx = await GetUserContextService()
-    await ctx.UpdateTgUser(
-        chat_id=chat_id,
-        column=TgUser.verified,
-        value=True,
-    )
+    # No terms-of-use step: a correct code completes registration outright.
+    await ctx.UpdateTgUser(chat_id=chat_id, column=TgUser.verified, value=True)
 
     await SendMessage(
         chat_id=chat_id,

@@ -320,8 +320,8 @@ Stores every bot↔user message exchange with timestamp and side (`Bot`/`User` e
   └─ state: EmailConfirm    → user enters 6-digit code → validate (3 attempts then
                               cooldown to EmailGet). On success: assign the FSM-stashed
                               nes_id to the TgUser — NO MyNES API call here.
-  └─ state: Terms           → send terms.pdf → user accepts
-  └─ verified = True
+                              A correct code completes registration outright:
+                              verified = True (NO terms-of-use step).
   └─ state: AboutNow        → inline prompt with 2 buttons:
                               [✏️ Write about now] → user types bio → saved → SendHub
                               [⏭ Write about later] → FSM cleared → SendHub

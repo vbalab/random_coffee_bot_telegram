@@ -28,8 +28,6 @@ PATH_BOT_QUICK_LOGS = _DIR_BOT_LOGS / "quick.log"
 PATH_API_LOGS = _DIR_LOGS / "api" / "api.log"
 PATH_TITLE_STORE = _DIR_TITLE / "title.json"
 
-PATH_TERMS_OF_USE = _DIR_ROOT / "docs" / "papers" / "terms_of_service.pdf"
-
 
 def EnsurePaths() -> None:
     for directory in _dirs:
