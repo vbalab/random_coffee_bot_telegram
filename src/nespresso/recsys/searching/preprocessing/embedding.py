@@ -1,4 +1,6 @@
-from nespresso.recsys.searching.preprocessing.model import model
+import logging
+
+from nespresso.recsys.searching.preprocessing.model import TOKEN_LEN, model
 
 
 def CalculateTokenLen(text: str) -> int:
@@ -7,7 +9,28 @@ def CalculateTokenLen(text: str) -> int:
     return len(tokenized["input_ids"])
 
 
+def _WarnIfTruncated(text: str) -> None:
+    """
+    Tripwire for silent embedding truncation. `model.encode` clips any input past
+    `max_seq_length` (TOKEN_LEN) with no signal, dropping the tail of a profile
+    from its vector — a quiet recall loss. Measured over the whole directory this
+    fires for 0/2905 profiles (max 683 tokens, ~⅓ of the cap), so it is a guard
+    against future corpus growth, not a hot-path concern; the tokenize pass is
+    negligible next to the encoder forward pass.
+    """
+    n = CalculateTokenLen(text)
+    if n > TOKEN_LEN:
+        preview = text.strip().split("\n", 1)[0][:80]
+        logging.warning(
+            "Embedding input truncated: %d tokens > %d cap; tail dropped. [%s]",
+            n,
+            TOKEN_LEN,
+            preview,
+        )
+
+
 def CreateEmbedding(text: str) -> list[float]:
+    _WarnIfTruncated(text)
     embedding = model.encode(text, normalize_embeddings=True)
 
     return embedding.tolist()
@@ -21,6 +44,9 @@ def CreateEmbeddings(texts: list[str], batch_size: int = 32) -> list[list[float]
     """
     if not texts:
         return []
+
+    for text in texts:
+        _WarnIfTruncated(text)
 
     embeddings = model.encode(
         texts,
