@@ -8,13 +8,39 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
 from nespresso.bot.lib.message.i18n import GetUserLanguage, t
-from nespresso.bot.lib.message.io import SendMessage
+from nespresso.bot.lib.message.io import ContextIO, SendMessage
 from nespresso.core.configs.title_store import GetTitle
 from nespresso.db.models.tg_user import TgUser
 from nespresso.db.services.user_context import GetUserContextService
 from nespresso.recsys.searching.profile_write import RebuildProfileForBio
 
 router = Router()
+
+# Max characters for a user-written bio. Bounds the one unbounded input to the
+# profile vector: keeps directory text + bio + enrichment comfortably under the
+# embedding's 2048-token cap (the directory side alone is ~683 tokens at most),
+# and stops a very long bio from dominating the profile embedding. Enforced at
+# BOTH bio-input sites — registration (`StartStates.AboutNow`) and this About
+# panel (`AboutStates.WriteAbout`) — via `RejectIfAboutTooLong`.
+MAX_ABOUT_CHARS = 1500
+
+
+async def RejectIfAboutTooLong(message: types.Message, lang: str) -> bool:
+    """
+    If the submitted bio exceeds `MAX_ABOUT_CHARS`, reply with the user's current
+    character count and the limit and return True; the caller then returns
+    WITHOUT clearing FSM state, so the user stays in the bio-writing step and can
+    simply send a shorter version. Returns False when the bio is within the cap.
+    """
+    text = message.text or ""
+    if len(text) <= MAX_ABOUT_CHARS:
+        return False
+    await SendMessage(
+        chat_id=message.chat.id,
+        text=t(lang, "about.too_long", current=len(text), max=MAX_ABOUT_CHARS),
+        context=ContextIO.UserFailed,
+    )
+    return True
 
 
 class AboutStates(StatesGroup):
@@ -102,6 +128,10 @@ async def AboutWriteAboutMessage(message: types.Message, state: FSMContext) -> N
 
     chat_id = message.chat.id
     lang = await GetUserLanguage(chat_id)
+
+    if await RejectIfAboutTooLong(message, lang):
+        return  # stays in WriteAbout so the user can resend a shorter bio
+
     ctx = await GetUserContextService()
 
     await ctx.UpdateTgUser(chat_id=chat_id, column=TgUser.about, value=message.text)

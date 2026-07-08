@@ -173,6 +173,7 @@
   "about.button_back": "⬅️ Back",
   "about.enter_text": "Send your bio as a text message:",
   "about.saved": "✅ Your bio has been saved!",
+  "about.too_long": "✍️ That's a bit long — your text is {current} characters, but the limit is {max}. Please shorten it and send it again.",
 
   "common.yes": "Yes",
   "common.no": "No",

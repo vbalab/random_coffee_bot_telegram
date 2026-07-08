@@ -17,6 +17,7 @@ from aiogram.types import (
 )
 
 from nespresso.api.request import EmailLookup, ResolveNesUserByEmail
+from nespresso.bot.handlers.client.commands.about import RejectIfAboutTooLong
 from nespresso.bot.handlers.client.email.verification import CreateCode, SendCode
 from nespresso.bot.lib.message.checks import CheckVerified
 from nespresso.bot.lib.message.i18n import (
@@ -414,6 +415,10 @@ async def StartAboutNowMessage(message: types.Message, state: FSMContext) -> Non
 
     chat_id = message.chat.id
     lang = await GetUserLanguage(chat_id)
+
+    if await RejectIfAboutTooLong(message, lang):
+        return  # stays in AboutNow so the user can resend a shorter bio
+
     ctx = await GetUserContextService()
 
     await ctx.UpdateTgUser(chat_id=chat_id, column=TgUser.about, value=message.text)
