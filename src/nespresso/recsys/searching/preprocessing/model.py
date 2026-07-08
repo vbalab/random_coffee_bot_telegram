@@ -1,7 +1,14 @@
+import asyncio
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
+from typing import TypeVar
+
 from huggingface_hub import snapshot_download
 from sentence_transformers import SentenceTransformer
 
 from nespresso.core.configs.paths import DIR_EMBEDDING
+
+_T = TypeVar("_T")
 
 # Alibaba GTE multilingual embeddings are optimized for semantic retrieval,
 # including multilingual corpora (e.g. EN + RU CV/resume search).
@@ -31,3 +38,21 @@ def GetSentenceTransformer() -> SentenceTransformer:
 
 
 model = GetSentenceTransformer()
+
+
+# All model inference funnels through ONE worker thread. The HuggingFace fast
+# tokenizer behind this model is shared by BOTH the GTE encoder and KeyBERT
+# (`keyword_model = KeyBERT(model=model)`) and is NOT thread-safe — concurrent
+# calls from different threads raise `RuntimeError: Already borrowed`. A single
+# worker keeps inference OFF the event loop (so other users' async I/O — Haiku
+# calls, OpenSearch — keeps flowing) while guaranteeing tokenizer calls never
+# overlap. Every async caller (interactive search, bio-save, directory sync) MUST
+# route through `RunInference` rather than `asyncio.to_thread` (which uses the
+# multi-thread default pool and would collide).
+_INFERENCE_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="inference")
+
+
+async def RunInference(fn: Callable[..., _T], *args: object) -> _T:
+    """Run a (blocking) model-inference call on the shared single worker thread."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(_INFERENCE_EXECUTOR, fn, *args)

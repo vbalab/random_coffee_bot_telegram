@@ -12,7 +12,6 @@ is logged and swallowed. The next directory sync self-heals the index because th
 bio is folded into the change hash (see `api/sync.py`).
 """
 
-import asyncio
 import logging
 
 from nespresso.db.services.user_context import GetUserContextService
@@ -22,11 +21,8 @@ from nespresso.recsys.searching.document import (
 )
 from nespresso.recsys.searching.filtering import StructuredFields
 from nespresso.recsys.searching.llm.enrich import EnrichTexts
-from nespresso.recsys.searching.preprocessing.embedding import (
-    CalculateTokenLen,
-    CreateEmbedding,
-)
-from nespresso.recsys.searching.preprocessing.model import TOKEN_LEN
+from nespresso.recsys.searching.preprocessing.embedding import CreateEmbedding
+from nespresso.recsys.searching.preprocessing.model import RunInference
 
 
 async def RebuildProfileForBio(nes_id: int, about: str) -> None:
@@ -45,13 +41,10 @@ async def RebuildProfileForBio(nes_id: int, about: str) -> None:
 
     try:
         text = BuildProfileText(nes_user, about)
-        if CalculateTokenLen(text) > TOKEN_LEN:
-            logging.warning(
-                f"nes_id={nes_id}: unified profile text exceeds {TOKEN_LEN} "
-                f"tokens; the embedding will truncate the tail."
-            )
         enriched = (await EnrichTexts([text]))[0].text
-        embedding = await asyncio.to_thread(CreateEmbedding, enriched)
+        # Serialized on the shared inference worker (tokenizer is not thread-safe);
+        # CreateEmbedding logs its own truncation tripwire.
+        embedding = await RunInference(CreateEmbedding, enriched)
         await UpsertProfileOpenSearch(
             nes_id, enriched, embedding, StructuredFields(nes_user)
         )

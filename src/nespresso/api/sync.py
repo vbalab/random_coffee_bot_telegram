@@ -47,6 +47,7 @@ from nespresso.recsys.searching.filtering import StructuredFields
 from nespresso.recsys.searching.index import EnsureOpenSearchIndex
 from nespresso.recsys.searching.llm.enrich import EnrichTexts
 from nespresso.recsys.searching.preprocessing.embedding import CreateEmbeddings
+from nespresso.recsys.searching.preprocessing.model import RunInference
 
 # How many profiles to embed + index per batch. Bounds peak memory (each batch
 # holds N×768 floats) and lets the event loop breathe between `to_thread` calls.
@@ -289,7 +290,7 @@ async def _RunSync(report: SyncReport) -> None:
         enriched = [r.text for r in results]
         enrich_retry |= {batch[i] for i, r in enumerate(results) if r.retry}
         enriched_by_id.update(zip(batch, enriched, strict=True))
-        embeddings = await asyncio.to_thread(CreateEmbeddings, enriched)
+        embeddings = await RunInference(CreateEmbeddings, enriched)
         items = [
             (nid, enriched[i], embeddings[i], StructuredFields(models[nid]))
             for i, nid in enumerate(batch)

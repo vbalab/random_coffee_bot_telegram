@@ -39,8 +39,10 @@ def CreateEmbedding(text: str) -> list[float]:
 def CreateEmbeddings(texts: list[str], batch_size: int = 32) -> list[list[float]]:
     """
     Batch variant of `CreateEmbedding` for the directory sync. `model.encode`
-    releases the GIL during the heavy compute, so callers should run this in a
-    worker thread (``asyncio.to_thread``) to avoid blocking the event loop.
+    releases the GIL during the heavy compute, so async callers should run this
+    off the event loop via ``model.RunInference`` (the shared single-worker
+    executor) — NOT a bare ``asyncio.to_thread``: the tokenizer is not thread-safe
+    and concurrent calls raise "Already borrowed".
     """
     if not texts:
         return []

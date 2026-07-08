@@ -25,11 +25,19 @@ async def main() -> None:
     qcat = {q.id: q.category for q in scored_queries}
 
     backend = OpenSearchBackend()
-    scores = []
-    for q in scored_queries:
-        ranked = await backend.rank(q.text)
-        s = Score(q.id, ranked, gold[q.id])
-        scores.append(s)
+
+    # Run queries concurrently (bounded): each query is 2 sequential Haiku calls,
+    # so serial is ~5 min. Temperature 0 → results are identical regardless of
+    # ordering; the semaphore just caps concurrent load on Claude / the encoder.
+    sem = asyncio.Semaphore(8)
+
+    async def _run(q):
+        async with sem:
+            ranked = await backend.rank(q.text)
+        return Score(q.id, ranked, gold[q.id])
+
+    scores = list(await asyncio.gather(*(_run(q) for q in scored_queries)))
+    for q, s in zip(scored_queries, scores):
         print(f"  [{q.id:16}] gold={s.gold:4} P@5={s.precision[5]:.2f} "
               f"nDCG@10={s.ndcg[10]:.2f}  {q.text!r}")
 
