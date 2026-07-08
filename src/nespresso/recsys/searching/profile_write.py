@@ -50,7 +50,7 @@ async def RebuildProfileForBio(nes_id: int, about: str) -> None:
                 f"nes_id={nes_id}: unified profile text exceeds {TOKEN_LEN} "
                 f"tokens; the embedding will truncate the tail."
             )
-        enriched = (await EnrichTexts([text]))[0]
+        enriched = (await EnrichTexts([text]))[0].text
         embedding = await asyncio.to_thread(CreateEmbedding, enriched)
         await UpsertProfileOpenSearch(
             nes_id, enriched, embedding, StructuredFields(nes_user)

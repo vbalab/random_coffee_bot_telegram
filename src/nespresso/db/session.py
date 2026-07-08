@@ -77,6 +77,17 @@ async def EnsureDB() -> None:
                 "synced_at TIMESTAMPTZ"
             )
         )
+        # Persisted retrieval texts (so an admin DB export shows them): raw
+        # directory SearchText, raw user bio, and the final enriched text.
+        await conn.execute(
+            text("ALTER TABLE nes_user ADD COLUMN IF NOT EXISTS mynes_text VARCHAR")
+        )
+        await conn.execute(
+            text("ALTER TABLE nes_user ADD COLUMN IF NOT EXISTS about_text VARCHAR")
+        )
+        await conn.execute(
+            text("ALTER TABLE nes_user ADD COLUMN IF NOT EXISTS enriched_text VARCHAR")
+        )
 
         # Migration: convert message PK from (message_id) to (chat_id, message_id)
         # because Telegram message_id is unique only within a chat.

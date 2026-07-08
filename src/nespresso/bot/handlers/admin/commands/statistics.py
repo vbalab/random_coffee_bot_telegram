@@ -353,6 +353,9 @@ async def _ExportNesUser(chat_id: int) -> None:
         "additional_work",
         "pre_nes_education",
         "post_nes_education",
+        "mynes_text",
+        "about_text",
+        "enriched_text",
         "created_at",
         "updated_at",
     ]
@@ -373,6 +376,9 @@ async def _ExportNesUser(chat_id: int) -> None:
             str(u.additional_work or ""),
             str(u.pre_nes_education or ""),
             str(u.post_nes_education or ""),
+            str(u.mynes_text or ""),
+            str(u.about_text or ""),
+            str(u.enriched_text or ""),
             str(u.created_at),
             str(u.updated_at),
         ]

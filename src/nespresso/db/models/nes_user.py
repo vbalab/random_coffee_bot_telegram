@@ -82,6 +82,13 @@ class NesUser(Base):
         DateTime(timezone=True), nullable=True
     )
 
+    # Persisted retrieval texts (visible in an admin DB export): the raw directory
+    # self-description (`SearchText`), the raw user bio (as of the last sync), and
+    # the final enriched text that is embedded + indexed in OpenSearch.
+    mynes_text: Mapped[str | None] = mapped_column(String, nullable=True)
+    about_text: Mapped[str | None] = mapped_column(String, nullable=True)
+    enriched_text: Mapped[str | None] = mapped_column(String, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=text("CURRENT_TIMESTAMP"),

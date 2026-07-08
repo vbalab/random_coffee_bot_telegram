@@ -73,7 +73,10 @@ _EMBED_BATCH = 256
 #     universities / roles from our directory) for richer, more accurate glosses,
 #     and is prompt-cached for reindex batches. Enrichment output isn't hashed, so
 #     the bump is what forces the re-embed.
-_DOC_VERSION = "8"
+# v9: enrichment retries unfaithful outputs with temperature (keeping the best) and
+#     the prompt gained a free-form-bio example; the bump re-embeds so every profile
+#     gets the improved enrichment. (Enrichment output still isn't hashed.)
+_DOC_VERSION = "9"
 
 # Columns written from the feed to `nes_user`. The directory feed now carries
 # `email` (-> nes_email), `sex`, and `programs` (with program/class_name derived
@@ -274,10 +277,18 @@ async def _RunSync(report: SyncReport) -> None:
     # profile) retrieve correctly.
     texts = {nid: BuildProfileText(models[nid], abouts.get(nid)) for nid in changed}
     failed_index: set[int] = set()
+    # Profiles whose enrichment hit a TRANSIENT failure (API error/timeout): they
+    # are indexed raw now, but their hash is nulled below so the next sync
+    # re-enriches them (self-heals e.g. once a credit outage clears).
+    enrich_retry: set[int] = set()
+    enriched_by_id: dict[int, str] = {}  # persisted to nes_user for the DB export
     for batch_start in range(0, len(changed), _EMBED_BATCH):
         batch = changed[batch_start : batch_start + _EMBED_BATCH]
         batch_texts = [texts[nid] for nid in batch]
-        enriched = await EnrichTexts(batch_texts)
+        results = await EnrichTexts(batch_texts)
+        enriched = [r.text for r in results]
+        enrich_retry |= {batch[i] for i, r in enumerate(results) if r.retry}
+        enriched_by_id.update(zip(batch, enriched, strict=True))
         embeddings = await asyncio.to_thread(CreateEmbeddings, enriched)
         items = [
             (nid, enriched[i], embeddings[i], StructuredFields(models[nid]))
@@ -287,6 +298,12 @@ async def _RunSync(report: SyncReport) -> None:
         failed_index |= failed
         report.reindexed += len(batch) - len(failed)
     report.index_errors = len(failed_index)
+    if enrich_retry:
+        logging.info(
+            "MyNES sync: %d profiles hit a transient enrichment failure; indexed "
+            "raw, will re-enrich next sync.",
+            len(enrich_retry),
+        )
 
     # Upsert ONLY changed/new/relisted rows (a profile that failed to index gets
     # hash=None so the next run retries it). Unchanged-and-listed rows are left
@@ -298,7 +315,12 @@ async def _RunSync(report: SyncReport) -> None:
         row["listed"] = True
         row["synced_at"] = now
         row["updated_at"] = now
-        if nes_id in failed_index:
+        # Persist the retrieval texts so the admin DB export shows them.
+        row["mynes_text"] = model.SearchText()
+        row["about_text"] = abouts.get(nes_id) or None
+        row["enriched_text"] = enriched_by_id.get(nes_id)
+        # A failed index write OR a transient enrichment failure forces a retry.
+        if nes_id in failed_index or nes_id in enrich_retry:
             row["mynes_text_hash"] = None
         else:
             row["mynes_text_hash"] = new_hashes[nes_id]
