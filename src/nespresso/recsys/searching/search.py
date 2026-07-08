@@ -227,13 +227,20 @@ class ScrollingSearch:
             len(sem_hits) >= _FETCH_SIZE or len(struct_hits) >= _FETCH_SIZE
         )
 
-        # Combine: structured matches dominate; hybrid score breaks ties. Keep a
-        # candidate if it matches a filter (boost>0) or is semantically relevant.
+        # Structured signal, normalized like the BM25/KNN lanes. StructuredBoost is
+        # a raw sum of per-filter weights; min-max it across the pool to [0,1] (the
+        # pool min is always 0 — a no-match candidate), so it's one more normalized
+        # signal comparable to `base`, not a step that dwarfs semantics. A strong
+        # BM25/KNN candidate can thus out-rank a near-empty one-filter profile, and
+        # both stay in the rerank window. Keep a candidate if it matches a filter or
+        # is semantically relevant. (See STRUCT_WEIGHT.)
+        boosts = {nid: StructuredBoost(filters, src) for nid, (_b, src) in pool.items()}
+        boost_max = max(boosts.values(), default=0.0) or 1.0
         scored: list[tuple[float, int, dict[Any, Any]]] = []
         for nid, (base, source) in pool.items():
-            boost = StructuredBoost(filters, source)
-            if boost > 0 or base >= _SCORE_THRESHOLD:
-                scored.append((STRUCT_WEIGHT * boost + base, nid, source))
+            if boosts[nid] > 0 or base >= _SCORE_THRESHOLD:
+                struct = STRUCT_WEIGHT * boosts[nid] / boost_max
+                scored.append((base + struct, nid, source))
         if not scored:
             return None
         scored.sort(key=lambda x: x[0], reverse=True)

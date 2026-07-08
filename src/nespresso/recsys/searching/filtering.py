@@ -22,11 +22,22 @@ from typing import Any
 
 from nespresso.recsys.searching.llm.query_understanding import QueryFilters
 
-# Weight applied to the structured boost relative to the (normalized, ~[0,1])
-# hybrid score, so that — when filters are present — structured matches dominate
-# ordering and the hybrid score breaks ties. With no filters, boost is 0 and the
-# pure hybrid order stands.
-STRUCT_WEIGHT = 10.0
+# How the structured signal joins the score. The hybrid `base` is already the
+# min-max-normalized (0..1) fusion of the BM25 and KNN lanes. The raw
+# StructuredBoost (a sum of +2/+3 per matched filter) is min-max-normalized THE
+# SAME WAY across the candidate pool, so structured is just a third [0,1] signal —
+# a peer of the semantic lanes, not a step that dwarfs them:
+#
+#     final = base + STRUCT_WEIGHT * boost_norm
+#
+# STRUCT_WEIGHT=1.5 keeps the structured lane on the same order as `base` (ceiling
+# 1.5 vs 1.0) — enough that sparse purely-structured queries (e.g. "МАЭ 2002 men")
+# stay in the top-K rerank window, but ~20× below the old flat +10*boost step.
+# The point isn't the exact number: a strongly-relevant BM25/KNN candidate that
+# misses one structured field now sits just behind the filter-matchers (inside the
+# rerank window) instead of 50 ranks back, so the LLM reranker judges them
+# head-to-head on the raw query. No filters -> boost 0 -> pure hybrid order stands.
+STRUCT_WEIGHT = 1.5
 
 # University abbreviations → a distinctive substring of the stored full name.
 _UNI_ALIASES: dict[str, str] = {
