@@ -65,6 +65,10 @@ def StructuredFields(nes_user: Any) -> dict[str, Any]:
         w["company"] for w in works
         if isinstance(w, dict) and w.get("company")
     ]
+    positions = [
+        w["position"] for w in works
+        if isinstance(w, dict) and w.get("position")
+    ]
     edus = (nes_user.pre_nes_education or []) + (nes_user.post_nes_education or [])
     universities = [
         e["university"] for e in edus
@@ -92,6 +96,10 @@ def StructuredFields(nes_user: Any) -> dict[str, Any]:
         "f_country_exp": [v for v in (nes_user.country_expertise or []) if v],
         "f_company": " | ".join(companies),
         "f_universities": " | ".join(universities),
+        # Job titles across all work records (current + prior). This is what the
+        # parser's `role` filter matches against — the ground truth for role
+        # searches ("data scientist", "консультант") is literally the position.
+        "f_role": " | ".join(positions),
     }
     return fields
 
@@ -100,7 +108,27 @@ def StructuredFields(nes_user: Any) -> dict[str, Any]:
 SOURCE_FIELDS = [
     "name", "f_sex", "f_city", "f_region", "f_country", "f_program", "f_class_year",
     "f_professional", "f_industry", "f_country_exp", "f_company", "f_universities",
+    "f_role",
 ]
+
+
+def RoleIsDominant(filters: QueryFilters) -> bool:
+    """
+    True when `role` is the primary intent — i.e. no other narrowing filter is
+    present. On compound queries (role + company / industry / city / …) those
+    filters define the answer, and letting `f_role` add recall + boost would flood
+    the pool with title-only matches that bury the intended constraint. So f_role
+    contributes ONLY when role stands alone.
+    """
+    return bool(filters.role) and not (
+        filters.company
+        or filters.university
+        or filters.industry_expertise
+        or filters.country_expertise
+        or filters.city
+        or filters.program
+        or filters.class_year
+    )
 
 
 def StructuredBoost(filters: QueryFilters, doc: dict[str, Any]) -> float:
@@ -130,6 +158,17 @@ def StructuredBoost(filters: QueryFilters, doc: dict[str, Any]) -> float:
 
     if filters.company and _n(filters.company) in _n(doc.get("f_company")):
         boost += 3
+
+    # role ↔ position: the parser emits `role` bilingually + comma-separated
+    # ("product manager, продакт-менеджер"); boost if any variant appears in the
+    # person's job titles. Phrase-level (not token) so "product" alone doesn't
+    # match "product owner". Gated on RoleIsDominant so it doesn't outweigh the
+    # real constraint on compound queries.
+    if RoleIsDominant(filters):
+        f_role = _n(doc.get("f_role"))
+        variants = [v for v in (_n(x) for x in filters.role.split(",")) if v]
+        if any(v in f_role for v in variants):
+            boost += 3
 
     if filters.university:
         unis = _n(doc.get("f_universities"))

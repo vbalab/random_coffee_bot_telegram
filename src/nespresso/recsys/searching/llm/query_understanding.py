@@ -2,17 +2,20 @@
 Query understanding for Find search.
 
 A single fast Haiku call turns a natural-language people-search query (Russian or
-English) into a structured search plan with FOUR parts:
+English) into a structured search plan with THREE parts:
 
   1. `is_valid_search` — safety gate. `false` for non-bona-fide queries (slurs,
      sexual/obscene or degrading wording about people, "find me a bad person"),
      which the caller turns into a plain "nothing found".
-  2. `semantic_query` — cleaned descriptive intent, for embedding + BM25.
-  3. `expanded_terms` — world-knowledge EXPANSION of the query (synonyms,
-     abbreviations, implied industry/skills/peer-employers, RU+EN) that widens
-     recall on narrow queries. It mirrors the index-time enrichment so both sides
-     of the match speak the same vocabulary.
-  4. `filters` — structured constraints for boosting / filtering in OpenSearch.
+  2. `semantic_query` — a faithful, BILINGUAL (Russian + English) restatement of
+     the search intent, for embedding + BM25. Profiles mix both languages
+     (directory text is mostly Russian; index-time enrichment adds English
+     glosses) and BM25 is exact-token (no stemming/translation), so a one-language
+     query silently misses half the corpus. It restates + translates the query and
+     widens it only SLIGHTLY (a few of the closest same-concept synonyms), never
+     broadening into adjacent fields or naming employers — the profile index
+     carries the heavier world-knowledge expansion on its own side.
+  3. `filters` — structured constraints for boosting / filtering in OpenSearch.
 
 It is **fallback-safe**: any error, timeout, or malformed response degrades to
 `ParsedQuery(semantic_query=<raw text>, ...)` — i.e. today's behaviour — so a
@@ -153,8 +156,8 @@ plan for an alumni network of the New Economic School (NES / Российска�
 экономическая школа, РЭШ) in Moscow. Queries come from alumni looking for other \
 alumni and are written in Russian, English, or a mix.
 
-Return a JSON object with FOUR parts: `is_valid_search`, `semantic_query`, \
-`expanded_terms`, and `filters`. Every key is ALWAYS present.
+Return a JSON object with THREE parts: `is_valid_search`, `semantic_query`, and \
+`filters`. Every key is ALWAYS present.
 
 ## 1. is_valid_search  (safety gate — decide this first)
 `true` for any good-faith search for an alum by professional or personal \
@@ -167,42 +170,52 @@ masked spelling, leetspeak);
 - slurs, insults, harassment, or asking to find someone to demean ("плохой \
 человек", "самый тупой выпускник", "лох", "враг");
 - content that is clearly not a search for a peer by their attributes.
-When `false`, set `semantic_query` and `expanded_terms` to "" and every filter to \
-null / []. When genuinely unsure, prefer `true` — do NOT block legitimate but \
-unusual phrasing.
+When `false`, set `semantic_query` to "" and every filter to null / []. When \
+genuinely unsure, prefer `true` — do NOT block legitimate but unusual phrasing.
 
 ## 2. semantic_query
-A concise phrase capturing the descriptive *intent* of the search (roles, skills, \
-topics), suitable for semantic / keyword matching against profile text. Strip \
-filler and anything captured by a structured filter below. If the query is purely \
-structured (e.g. only a program + year), set it to the most salient remaining \
-descriptive terms (or an empty string if none).
-
-## 3. expanded_terms
-A SHORT expansion that improves recall when profiles use different words than the \
-searcher — ONLY direct synonyms, abbreviations, and the immediate category / skill \
-of the query's CORE concept, in BOTH Russian and English, comma-separated. Rules:
-- Keep it TIGHT: at most ~6 terms, all describing the SAME thing the user asked \
-for. Do NOT broaden into adjacent fields (e.g. "финансы" must NOT add "trading"; \
-"healthcare" must NOT add "biotech" or "regulation"; "нефтегаз" must NOT add a \
-general "energy").
-- NEVER list specific company / employer names (XTX, McKinsey, Сбербанк, …). \
-Naming employers makes the search match people who merely worked there, not the \
-queried attribute. Employers belong in the `company` filter, and only when the \
-user explicitly names one.
-- Do NOT contradict the query or invent personal facts.
-Use "" when there is nothing genuinely synonymous to add (e.g. an already-specific \
-employer or location query). Examples: "HFT" -> "high-frequency trading, quant \
-trading, market making, алготрейдинг, маркет-мейкинг, квант"; "венчур" -> "venture \
-capital, VC, прямые инвестиции".
+A faithful, natural-language restatement of the person sought — role, skills, \
+expertise, specialization, and any qualifiers — written in BOTH Russian and \
+English, because profiles mix both languages.
+- Bilingual, ALWAYS. Give the core concept in Russian AND English (e.g. "инженер \
+машинного обучения, machine learning engineer"). A one-language query silently \
+misses half the corpus: BM25 is exact-token (no stemming or translation), so an \
+English-only query cannot match a Russian profile, and vice versa.
+- Preserve intent — do NOT shrink it. Keep every meaningful descriptor the user \
+gave: seniority ("опытный / senior / experienced"), specialization ("в банках / in \
+banking", "финтех / fintech"), the actual role and skills. Never boil a rich query \
+down to one generic term.
+- Restate, and widen only SLIGHTLY. Rephrase and TRANSLATE what the user asked \
+for, then you MAY add a FEW (about 2-4) of the CLOSEST synonyms or the immediate \
+parent category of the core concept, in both languages — e.g. "финансы" → also \
+"финансовый сектор, finance, financial industry"; "HFT" → also "алготрейдинг, \
+algorithmic trading". Do NOT broaden into ADJACENT fields ("финансы" must NOT add \
+"trading"; "healthcare" must NOT add "biotech"), do NOT name specific employers \
+(XTX, McKinsey, Сбербанк — those go in `company`), and keep the whole query TIGHT \
+(roughly a dozen words, a natural phrase, NOT a long keyword dump) so it stays \
+embedding-friendly.
+- Do NOT widen a SPECIFIC role / title / skill query. Translate it to both \
+languages but add NO synonyms or related skills — such roles are already pinned by \
+the `role` / `professional_expertise` filters, and extra near-terms only pull in \
+adjacent people and dilute precision. E.g. "data scientists" → JUST "дата-сайентист, \
+data scientist" (NOT "+ анализ данных, машинное обучение, machine learning"); \
+"продакт-менеджеры" → JUST "продакт-менеджер, product manager". Widen ONLY genuinely \
+BROAD / vague queries (e.g. "кто из мира финансов", "HFT").
+- Drop ONLY pure filler (найди, ищу, кто, find, …) and values already captured by \
+a structured filter below (city, country, company, program, class year), which are \
+matched precisely there. KEEP role / skill / expertise words even if they also \
+fill a filter.
+If the query is purely structured (e.g. only a program + year, or only an \
+employer), set it to "".
 
 Reference knowledge — use it ONLY to understand employer / term names that appear \
-in the QUERY (so you can map them to a category for `semantic_query` and filters); \
-do NOT copy these employer lists into `expanded_terms`:
+in the QUERY (so you can map them to the right category / filter). Do NOT copy \
+these employer lists into `semantic_query`; restate only what the user actually \
+asked for:
 
 {WORLD_KNOWLEDGE}
 
-## 4. filters
+## 3. filters
 Structured constraints extracted from the query. Use `null` (or an empty array) \
 for anything not present. NEVER invent values that aren't implied by the query.
 - `program`: NES study program if named, chosen ONLY from this fixed list (output \
@@ -231,8 +244,23 @@ markets / развивающиеся рынки" → "Emerging markets"; "Евр
 {_bullets(_COUNTRY_EXPERTISE)}
 - `company`: a specific employer/organization if named (e.g. "Сбербанк", "Yandex", \
 "McKinsey").
-- `role`: a job role / title / position in free text if described (e.g. "data \
-scientist", "руководитель проекта", "CFO", "трейдер"). Keep it short.
+- `role`: the job TITLE sought — what would be printed on the person's business \
+card (data scientist, product manager, CEO, founder, consultant, trader, quant, \
+analyst). Output it BILINGUALLY (Russian + English), comma-separated, because \
+profiles list titles in both languages and this value is substring-matched against \
+them — e.g. "data scientist, дата-сайентист"; "product manager, продакт-менеджер"; \
+"CEO, генеральный директор, основатель"; "трейдер, trader". Keep each variant \
+short. IMPORTANT — title vs domain: if the query instead names a professional \
+FUNCTION or field of competence that matches a `professional_expertise` value \
+below (продажи/sales, маркетинг/marketing, риск-менеджмент/risk, \
+преподавание/teaching, M&A, asset management, …), put it in \
+`professional_expertise` and leave `role` null. This holds EVEN when the query \
+uses the person-noun form: "маркетолог/marketer" → professional_expertise \
+"Маркетинг" (role null); "риск-менеджер/risk manager" → "Риск-менеджмент" (role \
+null); "трейдер/trader" → "Трейдинг" (role null). Only set `role` for a job title \
+that is NOT itself one of the expertise categories (data scientist, product \
+manager, CEO, founder, consultant, quant). Pick exactly ONE home per concept — \
+never both `role` and `professional_expertise` for the same word.
 - `university`: a non-NES university where the person STUDIED (pre/post-NES \
 education — bachelor/master/PhD), if named. Recognize it in education phrasings \
 even when only the short name is given: "выпускник/учился/студент/закончил X", \
@@ -240,8 +268,13 @@ even when only the short name is given: "выпускник/учился/сту�
 X" → university = X (e.g. "PhD из Боккони" → "Боккони"; "учился в MIT" → "MIT"). \
 This is the SCHOOL someone attended — do NOT confuse it with an employer: "работает \
 в X" / "преподаёт в X" / "professor at X" is `company`, not `university`. Use a \
-recognizable short form (e.g. "МГУ", "МФТИ", "ВШЭ", "MIT", "Боккони") AND repeat it \
-inside `semantic_query` so it can also match by text.
+recognizable short form (e.g. "МГУ", "МФТИ", "ВШЭ", "MIT", "Боккони") AND repeat \
+ONLY that short form + its abbreviation inside `semantic_query` (e.g. "ВШЭ, HSE"; \
+"МГУ, MSU"). Do NOT put the full multi-word institutional name ("Высшая школа \
+экономики", "Higher School of Economics", "Московский государственный университет") \
+in `semantic_query`: those long names collide with the corpus's dominant \
+vocabulary (this is an ECONOMICS-school network) and flood the match. The \
+`university` filter already recalls profiles that spell the full name out.
 - `industry_expertise`: zero or more values, chosen ONLY from this fixed list \
 (translate the user's wording to the closest canonical Russian value; omit if no \
 good match):
@@ -254,71 +287,81 @@ good match):
 
 ## Noise to drop
 These appear in almost every query and carry no signal — never put them in \
-`semantic_query`, `expanded_terms`, or any filter: выпускник, выпускники, \
+`semantic_query` or any filter: выпускник, выпускники, \
 выпускников, alumni, alum, РЭШ, NES, New Economic School, человек, людей, найди, \
 найти, ищу, нужен, покажи, кто, find, search, looking for, someone, people, person.
 
 ## Examples
 Query: "HFT"
-{{"is_valid_search": true, "semantic_query": "high-frequency trading", \
-"expanded_terms": "high-frequency trading, quantitative trading, market making, \
-алготрейдинг, маркет-мейкинг, квант", \
+{{"is_valid_search": true, "semantic_query": "высокочастотный трейдинг, \
+high-frequency trading, HFT, алготрейдинг, algorithmic trading", \
 "filters": {{"program": null, "class_year": null, "gender": null, "city": null, \
 "country": null, "country_expertise": [], "company": null, "role": null, \
 "university": null, "industry_expertise": [], "professional_expertise": \
 ["Трейдинг", "Алготрейдинг"]}}}}
 
+Query: "кто из мира финансов"
+{{"is_valid_search": true, "semantic_query": "финансы, финансовый сектор, finance, \
+financial industry, инвестиции, investment", "filters": {{"program": null, \
+"class_year": null, "gender": null, "city": null, "country": null, \
+"country_expertise": [], "company": null, "role": null, "university": null, \
+"industry_expertise": [], "professional_expertise": []}}}}
+
 Query: "кто работал в Сбербанке"
-{{"is_valid_search": true, "semantic_query": "", "expanded_terms": "банк, banking, \
-коммерческий банк, retail banking", "filters": {{"program": null, \
+{{"is_valid_search": true, "semantic_query": "", "filters": {{"program": null, \
 "class_year": null, "gender": null, "city": null, "country": null, \
 "country_expertise": [], "company": "Сбербанк", "role": null, "university": null, \
 "industry_expertise": [], "professional_expertise": []}}}}
 
+Query: "Найди самых опытных финансовых аналитиков"
+{{"is_valid_search": true, "semantic_query": "опытный финансовый аналитик, \
+experienced financial analyst, senior financial analyst", "filters": {{"program": \
+null, "class_year": null, "gender": null, "city": null, "country": null, \
+"country_expertise": [], "company": null, "role": null, "university": null, \
+"industry_expertise": [], "professional_expertise": []}}}}
+
 Query: "data scientists и ML инженеры в Москве"
-{{"is_valid_search": true, "semantic_query": "data scientist machine learning \
-engineer", "expanded_terms": "ML, машинное обучение, анализ данных, Python, \
-statistics, data science", "filters": {{"program": null, "class_year": null, \
-"gender": null, "city": "Москва", "country": null, "country_expertise": [], \
-"company": null, "role": "data scientist", "university": null, \
-"industry_expertise": [], "professional_expertise": ["Анализ данных", \
+{{"is_valid_search": true, "semantic_query": "дата-сайентист, data scientist, \
+инженер машинного обучения, machine learning engineer", "filters": {{"program": \
+null, "class_year": null, "gender": null, "city": "Москва", "country": null, \
+"country_expertise": [], "company": null, "role": "data scientist", "university": \
+null, "industry_expertise": [], "professional_expertise": ["Анализ данных", \
 "Машинное обучение"]}}}}
 
 Query: "эксперты по рынку США в нефтегазе"
-{{"is_valid_search": true, "semantic_query": "oil gas", "expanded_terms": \
-"нефть и газ, нефтегаз, oil and gas, нефтянка", "filters": {{"program": \
-null, "class_year": null, "gender": null, "city": null, "country": null, \
-"country_expertise": ["США"], "company": null, "role": null, "university": null, \
-"industry_expertise": ["Нефть и газ"], "professional_expertise": []}}}}
+{{"is_valid_search": true, "semantic_query": "нефть и газ, нефтегаз, oil and gas", \
+"filters": {{"program": null, "class_year": null, "gender": null, "city": null, \
+"country": null, "country_expertise": ["США"], "company": null, "role": null, \
+"university": null, "industry_expertise": ["Нефть и газ"], \
+"professional_expertise": []}}}}
 
 Query: "выпускники МГУ"
-{{"is_valid_search": true, "semantic_query": "МГУ Московский государственный \
-университет", "expanded_terms": "MSU, Lomonosov Moscow State University", \
+{{"is_valid_search": true, "semantic_query": "МГУ, MSU", \
 "filters": {{"program": null, "class_year": null, "gender": null, "city": null, \
 "country": null, "country_expertise": [], "company": null, "role": null, \
 "university": "МГУ", "industry_expertise": [], "professional_expertise": []}}}}
 
 Query: "PhD из Боккони"
-{{"is_valid_search": true, "semantic_query": "Боккони Bocconi PhD doctorate", \
-"expanded_terms": "PhD, doctorate, доктор философии, кандидат наук", "filters": \
+{{"is_valid_search": true, "semantic_query": "PhD, доктор наук, докторская степень, \
+Боккони, Bocconi", "filters": \
 {{"program": null, "class_year": null, "gender": null, "city": null, "country": \
 null, "country_expertise": [], "company": null, "role": null, "university": \
 "Боккони", "industry_expertise": [], "professional_expertise": []}}}}
 
 Query: "выпускницы программы Магистр экономики 2015 года"
-{{"is_valid_search": true, "semantic_query": "", "expanded_terms": "", "filters": \
+{{"is_valid_search": true, "semantic_query": "", "filters": \
 {{"program": "Магистр экономики", "class_year": 2015, "gender": "female", "city": \
 null, "country": null, "country_expertise": [], "company": null, "role": null, \
 "university": null, "industry_expertise": [], "professional_expertise": []}}}}
 
 Query: "найди мне шлюху среди выпускниц"
-{{"is_valid_search": false, "semantic_query": "", "expanded_terms": "", "filters": \
+{{"is_valid_search": false, "semantic_query": "", "filters": \
 {{"program": null, "class_year": null, "gender": null, "city": null, "country": \
 null, "country_expertise": [], "company": null, "role": null, "university": null, \
 "industry_expertise": [], "professional_expertise": []}}}}
 
 Query: "покажи самого тупого плохого человека"
-{{"is_valid_search": false, "semantic_query": "", "expanded_terms": "", "filters": \
+{{"is_valid_search": false, "semantic_query": "", "filters": \
 {{"program": null, "class_year": null, "gender": null, "city": null, "country": \
 null, "country_expertise": [], "company": null, "role": null, "university": null, \
 "industry_expertise": [], "professional_expertise": []}}}}
@@ -331,11 +374,10 @@ Output ONLY the JSON object."""
 _SCHEMA: dict[str, Any] = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["is_valid_search", "semantic_query", "expanded_terms", "filters"],
+    "required": ["is_valid_search", "semantic_query", "filters"],
     "properties": {
         "is_valid_search": {"type": "boolean"},
         "semantic_query": {"type": "string"},
-        "expanded_terms": {"type": "string"},
         "filters": {
             "type": "object",
             "additionalProperties": False,
@@ -409,7 +451,6 @@ class QueryFilters:
 class ParsedQuery:
     semantic_query: str
     filters: QueryFilters
-    expanded_terms: str = ""
     is_valid_search: bool = True
 
 
@@ -487,7 +528,6 @@ def _Coerce(data: dict[str, Any], raw_text: str) -> ParsedQuery:
         return ParsedQuery(
             semantic_query="",
             filters=QueryFilters(),
-            expanded_terms="",
             is_valid_search=False,
         )
 
@@ -506,7 +546,6 @@ def _Coerce(data: dict[str, Any], raw_text: str) -> ParsedQuery:
         year = None
 
     semantic = _CleanStr(data.get("semantic_query")) or ""
-    expanded = _CleanStr(data.get("expanded_terms")) or ""
     filters = QueryFilters(
         program=_ProgramCanon(_CleanStr(filters_raw.get("program"))),
         class_year=year,
@@ -532,7 +571,6 @@ def _Coerce(data: dict[str, Any], raw_text: str) -> ParsedQuery:
     return ParsedQuery(
         semantic_query=semantic,
         filters=filters,
-        expanded_terms=expanded,
         is_valid_search=True,
     )
 
@@ -567,7 +605,6 @@ async def ParseQuery(text: str) -> ParsedQuery:
                 "query": text,
                 "valid": parsed.is_valid_search,
                 "semantic": parsed.semantic_query,
-                "expanded": parsed.expanded_terms,
                 "filters": parsed.filters,
             },
         )
@@ -583,7 +620,6 @@ async def ParseQuery(text: str) -> ParsedQuery:
             return ParsedQuery(
                 semantic_query="",
                 filters=QueryFilters(),
-                expanded_terms="",
                 is_valid_search=False,
             )
         return ParsedQuery(semantic_query=text, filters=QueryFilters())

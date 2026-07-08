@@ -16,6 +16,7 @@ from nespresso.recsys.searching.filtering import (
     SOURCE_FIELDS,
     STRUCT_WEIGHT,
     CandidateCard,
+    RoleIsDominant,
     StructuredBoost,
     _uni_substrings,
 )
@@ -24,6 +25,7 @@ from nespresso.recsys.searching.llm.query_understanding import ParseQuery, Query
 from nespresso.recsys.searching.llm.rerank import Rerank
 from nespresso.recsys.searching.preprocessing.embedding import CreateEmbedding
 from nespresso.recsys.searching.preprocessing.keywords import ExtractKeywords
+from nespresso.recsys.searching.preprocessing.model import RunInference
 from nespresso.recsys.searching.search_pipeline import PIPELINE_NAME
 
 _TIMEOUT = 60  # alive for 1 hour
@@ -33,7 +35,6 @@ _FETCH_SIZE = (
 _KNN_LIMIT = 30
 _SCORE_THRESHOLD = 0.1  # drop semantic-only results below this normalized score
 _DISPLAY_LIMIT = 30  # pages materialized per chunk; more load as the user scrolls
-_EXPANSION_BOOST = 0.25  # world-knowledge query expansion: a gentle recall nudge only
 
 
 @dataclass
@@ -62,28 +63,24 @@ class ScrollingSearch:
         self._pool_capped: bool = False
 
     def _SemanticBody(
-        self, semantic: str, keywords: str, expanded: str, embedding: list[float]
+        self, semantic: str, keywords: str, embedding: list[float]
     ) -> dict[Any, Any]:
-        """Hybrid BM25 + KNN retrieval on the cleaned semantic query.
+        """Hybrid BM25 + KNN retrieval on the bilingual semantic query.
 
         Two sub-queries over the single unified profile field: BM25 on `text` +
         KNN on `embedding`. (Directory self-description and user bio are one
         document now, so there is no second "cv side" lane.)
 
-        The query-side world-knowledge `expanded` terms ride a separate, heavily
-        down-weighted should-clause (`_EXPANSION_BOOST`): they widen *lexical*
-        recall for narrow queries without letting world-knowledge tokens outvote
-        the actual query. The embedding stays on the clean semantic text.
+        `semantic` is already a faithful RU+EN restatement of the query (see the
+        parser), so it feeds both the Russian primary text and the English
+        world-knowledge glosses in the index — no separate query-side expansion
+        lane is needed; the index already carries the expansion on its own side.
         """
 
         def _text_query(field: str) -> dict[Any, Any]:
             should: list[dict[Any, Any]] = [{"match": {field: {"query": semantic}}}]
             if keywords:
                 should.append({"match": {field: {"query": keywords, "boost": 0.5}}})
-            if expanded:
-                should.append(
-                    {"match": {field: {"query": expanded, "boost": _EXPANSION_BOOST}}}
-                )
             if len(should) == 1:
                 return {"match": {field: semantic}}
             return {"bool": {"should": should}}
@@ -137,6 +134,11 @@ class ScrollingSearch:
             should.append({"match": {"f_region": filters.city}})
         if filters.company:
             should.append({"match": {"f_company": filters.company}})
+        # f_role RECALL only when role is the dominant intent (see RoleIsDominant):
+        # on compound queries the other filters supply recall and a role lane would
+        # flood the pool with title-only matches.
+        if RoleIsDominant(filters):
+            should.append({"match": {"f_role": filters.role}})
         if filters.university:
             for sub in _uni_substrings(filters.university):
                 should.append({"match": {"f_universities": sub}})
@@ -185,19 +187,24 @@ class ScrollingSearch:
             return None
         filters = parsed.filters
         semantic = parsed.semantic_query.strip() or text
-        keywords = ExtractKeywords(semantic)
-        expanded = parsed.expanded_terms if settings.QUERY_EXPANSION_ENABLED else ""
-        embedding = CreateEmbedding(semantic)
+        # Both are CPU-bound (KeyBERT + GTE encode) and would otherwise BLOCK the
+        # event loop, stalling every other user's query for the duration. Route
+        # them off-loop via the shared single-worker inference executor — NOT a
+        # bare to_thread/gather: KeyBERT and the encoder share one non-thread-safe
+        # tokenizer, so concurrent calls raise "Already borrowed". Serialized here,
+        # but the event loop stays free for other users' Haiku/OpenSearch I/O.
+        keywords = await RunInference(ExtractKeywords, semantic)
+        embedding = await RunInference(CreateEmbedding, semantic)
 
         logging.info(
             f"chat_id={message.chat.id} :: query='{text}' semantic='{semantic}' "
-            f"keywords='{keywords}' expanded='{expanded}'"
+            f"keywords='{keywords}'"
         )
 
         # Candidate pool: nes_id -> (base hybrid score, _source).
         pool: dict[int, tuple[float, dict[Any, Any]]] = {}
         sem_hits = await self._Search(
-            self._SemanticBody(semantic, keywords, expanded, embedding)
+            self._SemanticBody(semantic, keywords, embedding)
         )
         for hit in sem_hits:
             pool[int(hit["_id"])] = (float(hit["_score"]), hit.get("_source") or {})

@@ -42,6 +42,7 @@ _STRUCTURED_PROPERTIES: dict = {
     "f_country_exp": {"type": "keyword"},
     "f_company": {"type": "text"},
     "f_universities": {"type": "text"},
+    "f_role": {"type": "text"},
 }
 
 

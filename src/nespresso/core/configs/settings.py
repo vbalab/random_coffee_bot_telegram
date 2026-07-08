@@ -31,10 +31,6 @@ class Settings(BaseSettings):
     RERANK_MODEL: str = "claude-haiku-4-5"
     RERANK_ENABLED: bool = True
     RERANK_CANDIDATES: int = 30
-    # Query-side world-knowledge expansion (`expanded_terms`) fed into the BM25
-    # recall channel. Gated so it can be A/B'd independently; moderation +
-    # semantic/filter parsing in the same parser call do NOT depend on this flag.
-    QUERY_EXPANSION_ENABLED: bool = True
     # Index-time profile enrichment (world-knowledge expansion before embedding).
     ENRICH_ENABLED: bool = True
     ENRICH_MODEL: str = "claude-haiku-4-5"
