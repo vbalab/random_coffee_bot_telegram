@@ -127,6 +127,7 @@ class SyncReport:
     changed: int = 0  # profiles whose text changed (needed re-embedding)
     reindexed: int = 0  # profiles successfully (re)indexed in OpenSearch
     index_errors: int = 0  # profiles that failed to index
+    deferred: int = 0  # profiles left unprocessed because Claude ran out of credits
     delisted: int = 0  # users removed from the directory this run
     busy: bool = False  # another sync was already running
     ok: bool = False
@@ -183,7 +184,8 @@ async def SyncFromMyNES(trigger: str) -> SyncReport:
 
         logging.info(
             "MyNES sync (%s) done: ok=%s fetched=%d alumni=%d upserted=%d "
-            "changed=%d reindexed=%d index_errors=%d delisted=%d took=%.1fs",
+            "changed=%d reindexed=%d index_errors=%d deferred=%d delisted=%d "
+            "took=%.1fs",
             trigger,
             report.ok,
             report.fetched,
@@ -192,6 +194,7 @@ async def SyncFromMyNES(trigger: str) -> SyncReport:
             report.changed,
             report.reindexed,
             report.index_errors,
+            report.deferred,
             report.delisted,
             report.duration_s,
         )
@@ -308,23 +311,61 @@ async def _RunSync(report: SyncReport) -> None:
     # are indexed raw now, but their hash is nulled below so the next sync
     # re-enriches them (self-heals e.g. once a credit outage clears).
     enrich_retry: set[int] = set()
+    # Profiles actually embedded + indexed this run (enriched-ok or transient-raw).
+    # ONLY these get a DB row written below; everything else keeps its old hash and
+    # is retried next sync.
+    committed: list[int] = []
     enriched_by_id: dict[int, str] = {}  # persisted to nes_user for the DB export
+    credits_exhausted = False
     for batch_start in range(0, len(changed), _EMBED_BATCH):
         batch = changed[batch_start : batch_start + _EMBED_BATCH]
         batch_texts = [texts[nid] for nid in batch]
         results = await EnrichTexts(batch_texts)
-        enriched = [r.text for r in results]
-        enrich_retry |= {batch[i] for i, r in enumerate(results) if r.retry}
-        enriched_by_id.update(zip(batch, enriched, strict=True))
-        embeddings = await RunInference(CreateEmbeddings, enriched)
-        items = [
-            (nid, enriched[i], embeddings[i], StructuredFields(models[nid]))
-            for i, nid in enumerate(batch)
+
+        # Out-of-credits enrichment returns `skip`: those profiles are left ENTIRELY
+        # untouched (not embedded, not indexed, no DB row) so the next sync retries
+        # the WHOLE update once credits return — never downgrading a good enriched
+        # doc with un-enriched text. Everything else (enriched-ok or transient-raw)
+        # is indexed as before.
+        processed = [
+            (nid, r) for nid, r in zip(batch, results, strict=True) if not r.skip
         ]
-        failed = await BulkUpsertProfilesOpenSearch(items)
-        failed_index |= failed
-        report.reindexed += len(batch) - len(failed)
+        if len(processed) < len(batch):
+            credits_exhausted = True
+
+        if processed:
+            proc_ids = [nid for nid, _ in processed]
+            enriched = [r.text for _, r in processed]
+            enrich_retry |= {nid for nid, r in processed if r.retry}
+            enriched_by_id.update(zip(proc_ids, enriched, strict=True))
+            embeddings = await RunInference(CreateEmbeddings, enriched)
+            items = [
+                (nid, enriched[i], embeddings[i], StructuredFields(models[nid]))
+                for i, nid in enumerate(proc_ids)
+            ]
+            failed = await BulkUpsertProfilesOpenSearch(items)
+            failed_index |= failed
+            report.reindexed += len(proc_ids) - len(failed)
+            committed.extend(proc_ids)
+
+        if credits_exhausted:
+            # Every remaining enrich call would 400 identically — stop. The deferred
+            # profiles (this batch's skipped ones + all later batches) keep their old
+            # hash and are retried next sync. Admins were already alerted (throttled)
+            # by ReportLLMError inside EnrichTexts.
+            break
+
     report.index_errors = len(failed_index)
+    committed_set = set(committed)
+    report.deferred = len(changed) - len(committed_set)
+    if credits_exhausted:
+        logging.error(
+            "MyNES sync: Claude API OUT OF CREDITS during enrichment — committed %d "
+            "profiles, DEFERRED %d to the next sync (indexed nothing for them). Add "
+            "credits to resume enrichment.",
+            len(committed_set),
+            report.deferred,
+        )
     if enrich_retry:
         logging.info(
             "MyNES sync: %d profiles hit a transient enrichment failure; indexed "
@@ -332,11 +373,16 @@ async def _RunSync(report: SyncReport) -> None:
             len(enrich_retry),
         )
 
-    # Upsert ONLY changed/new/relisted rows (a profile that failed to index gets
-    # hash=None so the next run retries it). Unchanged-and-listed rows are left
-    # untouched — they are already correct and still listed.
+    # Upsert ONLY changed/new/relisted rows that we actually processed this run (a
+    # profile that failed to index gets hash=None so the next run retries it).
+    # Unchanged-and-listed rows are left untouched — already correct and still
+    # listed. Out-of-credits DEFERRED profiles are also left untouched (not in
+    # `committed_set`): no row is written, so their stored hash still mismatches and
+    # the next sync retries the whole update once credits return.
     rows: list[dict[str, Any]] = []
     for nes_id in changed:
+        if nes_id not in committed_set:
+            continue
         model = models[nes_id]
         row = {col: getattr(model, col) for col in _PROFILE_COLUMNS}
         row["listed"] = True

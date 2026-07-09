@@ -45,7 +45,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from nespresso.core.configs.settings import settings
-from nespresso.recsys.searching.llm.alerts import ReportLLMError
+from nespresso.recsys.searching.llm.alerts import IsCreditsExhausted, ReportLLMError
 from nespresso.recsys.searching.llm.client import client
 from nespresso.recsys.searching.llm.world_knowledge import DIRECTORY_KNOWLEDGE
 
@@ -199,20 +199,31 @@ def _PreservesOriginal(original: str, enriched: str) -> bool:
 @dataclass
 class EnrichResult:
     """
-    One profile's enrichment outcome. `text` is what to index (enriched best-effort,
-    or raw on failure). `retry` is True ONLY for a transient failure (API
-    error/timeout) — the caller should force a re-attempt on the next sync (mark the
-    change hash None), so an outage that clears (e.g. credits topped up) self-heals.
-    A deterministic unfaithful output is NOT a retry: we already retried it with
-    temperature and kept the best-effort result.
+    One profile's enrichment outcome. Exactly one disposition applies:
+
+    - default (`retry=False, skip=False`): `text` is the enriched (or deterministically
+      best-effort) result — index it. A deterministic unfaithful output is NOT a retry:
+      we already retried it with temperature and kept the best-effort result.
+    - `retry=True`: a TRANSIENT failure (API error / timeout / 5xx). `text` is the raw
+      fallback — index it now, but the caller should force a re-attempt on the next sync
+      (mark the change hash None) so an outage that clears self-heals.
+    - `skip=True`: the org is OUT OF CREDITS. The profile was NOT enriched and MUST NOT
+      be indexed or written this run — the caller leaves it entirely untouched so its
+      stored hash still mismatches and the next sync retries the WHOLE update once
+      credits return, rather than downgrading the index with un-enriched text. Admins
+      are alerted (throttled) via `ReportLLMError` at the failure site.
     """
 
     text: str
     retry: bool = False
+    skip: bool = False
 
 
 async def _EnrichOne(
-    text: str, semaphore: asyncio.Semaphore, system: list[dict[str, Any]]
+    text: str,
+    semaphore: asyncio.Semaphore,
+    system: list[dict[str, Any]],
+    out_of_credits: asyncio.Event,
 ) -> EnrichResult:
     """
     Inline-annotate one profile:
@@ -222,15 +233,25 @@ async def _EnrichOne(
         none is faithful, keep the BEST-retention enriched output (glosses beat
         raw text);
       - transient API error/timeout -> raw text, flagged `retry` so the sync
-        re-attempts next run (self-heals e.g. after a credit outage clears).
+        re-attempts next run (self-heals e.g. after a credit outage clears);
+      - OUT OF CREDITS -> trip the shared `out_of_credits` breaker and flag `skip`
+        so this and every not-yet-fired sibling are left untouched (the sync defers
+        them to the next run rather than indexing un-enriched text). No point
+        retrying: every call would 400 identically until credits are added.
     """
     if not text.strip():
         return EnrichResult(text)
+    # Breaker already tripped by a sibling — don't fire a doomed call.
+    if out_of_credits.is_set():
+        return EnrichResult(text, skip=True)
     first_line = text.splitlines()[0] if text.splitlines() else ""
     best_out: str | None = None
     best_ret = -1.0
     async with semaphore:
         for attempt in range(1 + _MAX_RETRIES):
+            # A sibling may have tripped the breaker while we waited on the semaphore.
+            if out_of_credits.is_set():
+                return EnrichResult(text, skip=True)
             try:
                 response = await client.with_options(
                     timeout=settings.ENRICH_TIMEOUT_SECONDS
@@ -243,14 +264,24 @@ async def _EnrichOne(
                     messages=[{"role": "user", "content": text}],
                 )
             except Exception as exc:
-                # Transient (timeout / 5xx / out-of-credits): don't burn the other
+                await ReportLLMError(exc, "enrichment")
+                if IsCreditsExhausted(exc):
+                    # Out of credits: trip the breaker so the rest of the batch
+                    # skips instead of hammering the API, and defer THIS profile.
+                    out_of_credits.set()
+                    logging.warning(
+                        "Enrichment stopped: Claude API out of credits; deferring "
+                        "this and the remaining profiles to the next sync. [%s]",
+                        first_line,
+                    )
+                    return EnrichResult(text, skip=True)
+                # Other transient error (timeout / 5xx): don't burn the other
                 # attempts — fall back to raw and self-heal on the next sync.
                 logging.warning(
                     "Enrichment attempt %d failed (%s); using raw text, will retry "
                     "next sync. [%s]",
                     attempt, type(exc).__name__, first_line, exc_info=True,
                 )
-                await ReportLLMError(exc, "enrichment")
                 return EnrichResult(text, retry=True)
             out = _FirstText(response).strip()
             ret = _Retention(text, out) if out else 0.0
@@ -288,7 +319,8 @@ async def EnrichTexts(texts: list[str]) -> list[EnrichResult]:
     """
     Inline-annotate each profile (aligned 1:1 with input, fallback-safe). Returns an
     `EnrichResult` per input: `.text` is what to index, `.retry` flags a transient
-    failure the caller should re-attempt next sync.
+    failure to re-attempt next sync, and `.skip` flags an out-of-credits profile the
+    caller must leave entirely untouched (defer to the next sync — see EnrichResult).
 
     The system prompt is prompt-cached only for large batches (a reindex), where the
     cache write amortizes across thousands of calls; a small incremental sync or a
@@ -299,4 +331,9 @@ async def EnrichTexts(texts: list[str]) -> list[EnrichResult]:
 
     system = _BuildSystem(cache=len(texts) >= _CACHE_MIN_BATCH)
     semaphore = asyncio.Semaphore(settings.ENRICH_CONCURRENCY)
-    return await asyncio.gather(*(_EnrichOne(t, semaphore, system) for t in texts))
+    # Shared circuit breaker: the first out-of-credits failure trips it and every
+    # not-yet-fired sibling short-circuits to `skip` instead of firing a doomed call.
+    out_of_credits = asyncio.Event()
+    return await asyncio.gather(
+        *(_EnrichOne(t, semaphore, system, out_of_credits) for t in texts)
+    )

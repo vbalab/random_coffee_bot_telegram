@@ -57,7 +57,18 @@ async def RebuildProfileForBio(nes_id: int, about: str) -> None:
 
     try:
         text = BuildProfileText(nes_user, about)
-        enriched = (await EnrichTexts([text]))[0].text
+        result = (await EnrichTexts([text]))[0]
+        if result.skip:
+            # Out of Claude credits: do NOT overwrite the existing (good, enriched)
+            # document with un-enriched text. The bio is safely in Postgres; the next
+            # sync re-enriches this profile once credits return (its hash mismatches
+            # the new bio). Admins were already alerted by EnrichTexts.
+            logging.warning(
+                f"nes_id={nes_id}: Claude API out of credits; bio saved to Postgres "
+                "but not re-indexed — the next sync enriches it once credits return."
+            )
+            return
+        enriched = result.text
         # Serialized on the shared inference worker (tokenizer is not thread-safe);
         # CreateEmbedding logs its own truncation tripwire.
         embedding = await RunInference(CreateEmbedding, enriched)
