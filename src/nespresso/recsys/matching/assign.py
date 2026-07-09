@@ -110,6 +110,20 @@ def MatchUsers(
     return result
 
 
+async def _ExcludedPairsWithBlocks(ctx: UserContextService) -> set[tuple[int, int]]:
+    """
+    History-based excluded pairs (last 2 rounds) PLUS every user's hidden-profile
+    blocks. A block is stored directionally (A hid B), but a one-sided hide still
+    makes a forced meeting awkward, so we exclude the pair BOTH ways — neither A→B
+    nor B→A can be assigned.
+    """
+    excluded = await ctx.GetRecentExcludedPairs(last_n_rounds=2)
+    for rater_chat_id, target_chat_id in await ctx.GetBlockedChatIdPairs():
+        excluded.add((rater_chat_id, target_chat_id))
+        excluded.add((target_chat_id, rater_chat_id))
+    return excluded
+
+
 async def _EligibleChatIds(ctx: UserContextService) -> list[int]:
     """
     Verified, non-blocked, non-opted-out users whose linked NES profile is still
@@ -160,7 +174,7 @@ async def CreateMatching(triggered_by: int) -> dict[int, list[int]]:
                 )
 
         all_users = await _EligibleChatIds(ctx)
-        excluded = await ctx.GetRecentExcludedPairs(last_n_rounds=2)
+        excluded = await _ExcludedPairsWithBlocks(ctx)
         # CPU-bound (rejection-sampling up to 2000 shuffles); off the event loop
         # so it can't stall every other user's request while it runs.
         assignments_map = await asyncio.to_thread(MatchUsers, all_users, excluded)
@@ -191,7 +205,7 @@ async def DemoMatching() -> dict[int, list[int]]:
     """
     ctx = await GetUserContextService()
     all_users = await _EligibleChatIds(ctx)
-    excluded = await ctx.GetRecentExcludedPairs(last_n_rounds=2)
+    excluded = await _ExcludedPairsWithBlocks(ctx)
     return await asyncio.to_thread(MatchUsers, all_users, excluded)
 
 

@@ -8,6 +8,7 @@ from nespresso.db.models.match import (
 )
 from nespresso.db.models.message import Message, MessageSide
 from nespresso.db.models.nes_user import NesUser
+from nespresso.db.models.profile_reaction import ProfileReaction, ReactionKind
 from nespresso.db.models.tg_user import TgUser
 
 __all__ = [
@@ -18,5 +19,7 @@ __all__ = [
     "Message",
     "MessageSide",
     "NesUser",
+    "ProfileReaction",
+    "ReactionKind",
     "TgUser",
 ]

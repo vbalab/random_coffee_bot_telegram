@@ -54,16 +54,29 @@ class Page:
 
 
 class ScrollingSearch:
-    def __init__(self, exclude_nes_id: int | None = None) -> None:
+    def __init__(
+        self,
+        exclude_nes_id: int | None = None,
+        blocked_nes_ids: set[int] | None = None,
+    ) -> None:
         self.pages: list[Page] = []
         self.index: int = 0
-        self._exclude_nes_id = exclude_nes_id
+        # Never surface: the searcher themselves (exclude_nes_id) OR any profile
+        # they've hidden via the Find actions panel (blocked_nes_ids). Both are
+        # applied as one `ids/must_not` filter on every retrieval lane.
+        self._excluded_ids: set[int] = set(blocked_nes_ids or ())
+        if exclude_nes_id is not None:
+            self._excluded_ids.add(exclude_nes_id)
         # Full ranked nes_id list (reranked top chunk + re-score tail). Pages are
         # materialized lazily, _DISPLAY_LIMIT at a time, as the user scrolls.
         self._order_ids: list[int] = []
         # True when OpenSearch retrieval hit its size cap, so MORE matching
         # profiles may exist beyond the pool (shown to the user as "N+").
         self._pool_capped: bool = False
+
+    def _ExcludedIdValues(self) -> list[str]:
+        """OpenSearch `ids` values (string doc ids) for the exclusion filter."""
+        return [str(nes_id) for nes_id in sorted(self._excluded_ids)]
 
     def _SemanticBody(
         self, semantic: str, keywords: str, embedding: list[float]
@@ -101,9 +114,10 @@ class ScrollingSearch:
                 },
             ]
         }
-        if self._exclude_nes_id is not None:
+        excluded = self._ExcludedIdValues()
+        if excluded:
             hybrid_query["filter"] = {
-                "bool": {"must_not": [{"ids": {"values": [str(self._exclude_nes_id)]}}]}
+                "bool": {"must_not": [{"ids": {"values": excluded}}]}
             }
         return {
             "size": _FETCH_SIZE,
@@ -151,8 +165,9 @@ class ScrollingSearch:
             return None
 
         bool_query: dict[str, Any] = {"should": should, "minimum_should_match": 1}
-        if self._exclude_nes_id is not None:
-            bool_query["must_not"] = [{"ids": {"values": [str(self._exclude_nes_id)]}}]
+        excluded = self._ExcludedIdValues()
+        if excluded:
+            bool_query["must_not"] = [{"ids": {"values": excluded}}]
         return {
             "size": _FETCH_SIZE,
             "_source": SOURCE_FIELDS,
@@ -161,6 +176,10 @@ class ScrollingSearch:
 
     def _CurrentPage(self) -> Page:
         return self.pages[self.index]
+
+    def CurrentProfileNesId(self) -> int:
+        """nes_id of the profile currently displayed (for the actions panel)."""
+        return self._CurrentPage().profile.nes_id
 
     async def _Search(
         self, body: dict[Any, Any], use_pipeline: bool = True

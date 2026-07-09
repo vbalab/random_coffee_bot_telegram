@@ -5,6 +5,7 @@ import uuid
 from enum import Enum
 
 from aiogram import F, Router, types
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters.callback_data import CallbackData
 from aiogram.filters.state import StateFilter
 from aiogram.fsm.context import FSMContext
@@ -14,13 +15,13 @@ from cachetools import TTLCache
 
 from nespresso.bot.lib.message.i18n import GetUserLanguage, t
 from nespresso.bot.lib.message.io import ContextIO, SendMessage
+from nespresso.db.models.profile_reaction import ReactionKind
 from nespresso.db.models.tg_user import TgUser
 from nespresso.db.services.user_context import GetUserContextService
 from nespresso.recsys.searching.preprocessing.embedding import CalculateTokenLen
 from nespresso.recsys.searching.preprocessing.model import TOKEN_LEN, RunInference
 from nespresso.recsys.searching.search import (
     SEARCHES,
-    Page,
     RegisterSearch,
     ScrollingSearch,
 )
@@ -44,6 +45,12 @@ def PercentageToReduce(token_len: int) -> int:
 class FindAction(str, Enum):
     Prev = "previous"
     Next = "next"
+    # Per-profile actions panel (opened by the "•••" button on the result card).
+    Actions = "actions"
+    BackToProfile = "back_profile"
+    Like = "like"
+    Dislike = "dislike"
+    Block = "block"
 
 
 class FindCallbackData(CallbackData, prefix="find"):
@@ -51,37 +58,66 @@ class FindCallbackData(CallbackData, prefix="find"):
     search_id: uuid.UUID
 
 
+# Language-neutral "more options" affordance for the result card.
+_MORE_ACTIONS_LABEL = "•••"
+
+
 class FindStates(StatesGroup):
     Text = State()
     Forward = State()
+
+
+def _FindButton(search_id: uuid.UUID, action: FindAction, text: str) -> InlineKeyboardButton:
+    return InlineKeyboardButton(
+        text=text,
+        callback_data=FindCallbackData(action=action, search_id=search_id).pack(),
+    )
 
 
 def FindKeyboard(
     search_id: uuid.UUID,
     prev: bool = False,
     next: bool = False,
-) -> InlineKeyboardMarkup | None:
-    def Button(action: FindAction) -> InlineKeyboardButton:
-        nonlocal search_id
+) -> InlineKeyboardMarkup:
+    """Result-card keyboard: a full-width '•••' actions row on top, then the
+    prev/next arrow row (arrows shown only where navigation is possible)."""
+    rows: list[list[InlineKeyboardButton]] = [
+        [_FindButton(search_id, FindAction.Actions, _MORE_ACTIONS_LABEL)]
+    ]
 
-        callback_data = FindCallbackData(action=action, search_id=search_id).pack()
-
-        return InlineKeyboardButton(
-            text="⬅️" if action is FindAction.Prev else "➡️",
-            callback_data=callback_data,
-        )
-
-    buttons: list[InlineKeyboardButton] = []
-
+    arrows: list[InlineKeyboardButton] = []
     if prev:
-        buttons.append(Button(FindAction.Prev))
+        arrows.append(_FindButton(search_id, FindAction.Prev, "⬅️"))
     if next:
-        buttons.append(Button(FindAction.Next))
+        arrows.append(_FindButton(search_id, FindAction.Next, "➡️"))
+    if arrows:
+        rows.append(arrows)
 
-    if not buttons:
-        return None
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
-    return InlineKeyboardMarkup(inline_keyboard=[buttons])
+
+def FindActionsKeyboard(
+    lang: str, search_id: uuid.UUID, reaction: str | None
+) -> InlineKeyboardMarkup:
+    """Per-profile actions panel (same card text, different keyboard):
+    like/dislike search-quality vote, hide-profile, and back-to-card."""
+    like_text = t(lang, "find.action_like")
+    dislike_text = t(lang, "find.action_dislike")
+    if reaction == ReactionKind.Like.value:
+        like_text = f"{like_text} ✅"
+    elif reaction == ReactionKind.Dislike.value:
+        dislike_text = f"{dislike_text} ✅"
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                _FindButton(search_id, FindAction.Like, like_text),
+                _FindButton(search_id, FindAction.Dislike, dislike_text),
+            ],
+            [_FindButton(search_id, FindAction.Block, t(lang, "find.action_block"))],
+            [_FindButton(search_id, FindAction.BackToProfile, t(lang, "find.action_back"))],
+        ]
+    )
 
 
 @router.message(StateFilter(FindStates.Text), F.content_type == "text")
@@ -126,8 +162,11 @@ async def CommandFindText(message: types.Message, state: FSMContext) -> None:
 
     ctx = await GetUserContextService()
     nes_id: int | None = await ctx.GetTgUser(message.chat.id, TgUser.nes_id)
+    # Profiles this user hid via the actions panel must never resurface in a
+    # fresh search — excluded at retrieval time alongside the user themselves.
+    blocked_nes_ids = set(await ctx.GetBlockedTargetNesIds(message.chat.id))
 
-    search = ScrollingSearch(exclude_nes_id=nes_id)
+    search = ScrollingSearch(exclude_nes_id=nes_id, blocked_nes_ids=blocked_nes_ids)
     page = await search.HybridSearch(message)
 
     # The "searching, please wait" message was only a progress indicator — remove
@@ -164,6 +203,154 @@ async def CommandFindText(message: types.Message, state: FSMContext) -> None:
     await state.clear()
 
 
+async def _RenderProfileView(
+    callback_query: types.CallbackQuery,
+    search: ScrollingSearch,
+    search_id: uuid.UUID,
+) -> None:
+    """Edit the message to the current page's profile card + card keyboard."""
+    assert isinstance(callback_query.message, types.Message)
+
+    text = search.CurrentText()
+    logging.info(f"chat_id={callback_query.from_user.id}  (scroll)  << {text!r}")
+
+    await callback_query.message.edit_text(
+        text=text,
+        reply_markup=FindKeyboard(
+            search_id=search_id,
+            prev=search.CanScrollFurtherBackward(),
+            next=search.CanScrollFurtherForward(),
+        ),
+        parse_mode="HTML",
+    )
+
+
+async def _HandleScroll(
+    callback_query: types.CallbackQuery,
+    lang: str,
+    search: ScrollingSearch,
+    search_id: uuid.UUID,
+    action: FindAction,
+) -> None:
+    assert isinstance(callback_query.message, types.Message)
+
+    if action is FindAction.Prev:
+        page = await search.ScrollBackward()
+        if page is None:
+            await callback_query.message.edit_reply_markup(
+                reply_markup=FindKeyboard(
+                    search_id=search_id, next=search.CanScrollFurtherForward()
+                )
+            )
+            await callback_query.answer(t(lang, "find.no_more_pages"))
+            return
+    else:
+        page = await search.ScrollForward()
+        if page is None:
+            await callback_query.message.edit_reply_markup(
+                reply_markup=FindKeyboard(search_id=search_id, prev=search.index > 0)
+            )
+            await callback_query.answer(t(lang, "find.no_more_pages"))
+            return
+
+    await _RenderProfileView(callback_query, search, search_id)
+    await callback_query.answer()
+
+
+async def _OpenActionsPanel(
+    callback_query: types.CallbackQuery,
+    lang: str,
+    search: ScrollingSearch,
+    search_id: uuid.UUID,
+) -> None:
+    """Swap only the keyboard (card text unchanged) to the actions panel."""
+    assert isinstance(callback_query.message, types.Message)
+
+    ctx = await GetUserContextService()
+    nes_id = search.CurrentProfileNesId()
+    reaction = await ctx.GetProfileReaction(callback_query.from_user.id, nes_id)
+
+    await callback_query.message.edit_reply_markup(
+        reply_markup=FindActionsKeyboard(lang, search_id, reaction)
+    )
+    await callback_query.answer()
+
+
+async def _BackToProfile(
+    callback_query: types.CallbackQuery,
+    search: ScrollingSearch,
+    search_id: uuid.UUID,
+) -> None:
+    """Restore the card keyboard (card text unchanged)."""
+    assert isinstance(callback_query.message, types.Message)
+
+    await callback_query.message.edit_reply_markup(
+        reply_markup=FindKeyboard(
+            search_id=search_id,
+            prev=search.CanScrollFurtherBackward(),
+            next=search.CanScrollFurtherForward(),
+        )
+    )
+    await callback_query.answer()
+
+
+async def _HandleReaction(
+    callback_query: types.CallbackQuery,
+    lang: str,
+    search: ScrollingSearch,
+    search_id: uuid.UUID,
+    action: FindAction,
+) -> None:
+    """Record/toggle a like/dislike (analytics-only) and re-render the panel."""
+    assert isinstance(callback_query.message, types.Message)
+
+    ctx = await GetUserContextService()
+    chat_id = callback_query.from_user.id
+    nes_id = search.CurrentProfileNesId()
+
+    kind = ReactionKind.Like if action is FindAction.Like else ReactionKind.Dislike
+    current = await ctx.GetProfileReaction(chat_id, nes_id)
+    # Toggle: tapping the already-selected vote clears it; otherwise switch to it.
+    new_reaction = None if current == kind.value else kind.value
+    await ctx.SetProfileReaction(chat_id, nes_id, new_reaction)
+
+    try:
+        await callback_query.message.edit_reply_markup(
+            reply_markup=FindActionsKeyboard(lang, search_id, new_reaction)
+        )
+    except TelegramBadRequest as e:
+        if "message is not modified" not in str(e):
+            raise
+    await callback_query.answer(t(lang, "find.reaction_saved"))
+
+
+async def _HandleBlock(
+    callback_query: types.CallbackQuery,
+    lang: str,
+    search: ScrollingSearch,
+    search_id: uuid.UUID,
+) -> None:
+    """Hide this profile for the user, then advance past it."""
+    assert isinstance(callback_query.message, types.Message)
+
+    ctx = await GetUserContextService()
+    chat_id = callback_query.from_user.id
+    nes_id = search.CurrentProfileNesId()
+    await ctx.SetProfileBlocked(chat_id, nes_id, True)
+    await callback_query.answer(t(lang, "find.profile_hidden"))
+
+    # Advance off the just-hidden card: forward if possible, else backward, else
+    # (it was the only result) clear the card entirely.
+    page = await search.ScrollForward()
+    if page is None:
+        page = await search.ScrollBackward()
+    if page is None:
+        await callback_query.message.edit_text(text=t(lang, "find.all_hidden"))
+        return
+
+    await _RenderProfileView(callback_query, search, search_id)
+
+
 @router.callback_query(FindCallbackData.filter())
 async def CommandFindCallback(
     callback_query: types.CallbackQuery,
@@ -179,51 +366,16 @@ async def CommandFindCallback(
     if search is None:
         await callback_query.message.edit_reply_markup(reply_markup=None)
         await callback_query.answer(t(lang, "find.search_expired"))
-
         return
 
-    page: Page | None
-    if callback_data.action == FindAction.Prev:
-        page = await search.ScrollBackward()
-
-        if page is None:
-            await callback_query.message.edit_reply_markup(
-                reply_markup=FindKeyboard(
-                    search_id=search_id,
-                    next=search.CanScrollFurtherForward(),
-                )
-            )
-            await callback_query.answer(t(lang, "find.no_more_pages"))
-
-            return
-    else:
-        page = await search.ScrollForward()
-
-        if page is None:
-            await callback_query.message.edit_reply_markup(
-                reply_markup=FindKeyboard(
-                    search_id=search_id,
-                    prev=search.index > 0,
-                )
-            )
-            await callback_query.answer(t(lang, "find.no_more_pages"))
-
-            return
-
-    markup = FindKeyboard(
-        search_id=search_id,
-        prev=search.CanScrollFurtherBackward(),
-        next=search.CanScrollFurtherForward(),
-    )
-
-    text = search.CurrentText()
-    logging.info(
-        f"chat_id={callback_query.from_user.id}  (scroll)  << {text!r}"
-    )
-
-    await callback_query.message.edit_text(
-        text=text,
-        reply_markup=markup,
-        parse_mode="HTML",
-    )
-    await callback_query.answer()
+    action = callback_data.action
+    if action in (FindAction.Prev, FindAction.Next):
+        await _HandleScroll(callback_query, lang, search, search_id, action)
+    elif action is FindAction.Actions:
+        await _OpenActionsPanel(callback_query, lang, search, search_id)
+    elif action is FindAction.BackToProfile:
+        await _BackToProfile(callback_query, search, search_id)
+    elif action in (FindAction.Like, FindAction.Dislike):
+        await _HandleReaction(callback_query, lang, search, search_id, action)
+    elif action is FindAction.Block:
+        await _HandleBlock(callback_query, lang, search, search_id)

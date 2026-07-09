@@ -172,3 +172,35 @@ async def EnsureDB() -> None:
                 "feedback_sent_at TIMESTAMPTZ"
             )
         )
+
+        # Per-user profile reactions + hidden profiles (see ProfileReaction).
+        # create_all above builds the whole table on a fresh DB; these idempotent
+        # statements bring an already-existing table up to the current shape and
+        # guarantee the unique target the atomic upserts (ON CONFLICT) rely on.
+        await conn.execute(
+            text("ALTER TABLE profile_reaction ADD COLUMN IF NOT EXISTS reaction VARCHAR")
+        )
+        await conn.execute(
+            text(
+                "ALTER TABLE profile_reaction ADD COLUMN IF NOT EXISTS "
+                "blocked BOOLEAN NOT NULL DEFAULT FALSE"
+            )
+        )
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_profile_reaction_rater_chat_id "
+                "ON profile_reaction (rater_chat_id)"
+            )
+        )
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_profile_reaction_target_nes_id "
+                "ON profile_reaction (target_nes_id)"
+            )
+        )
+        await conn.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_profile_reaction_rater_target "
+                "ON profile_reaction (rater_chat_id, target_nes_id)"
+            )
+        )
