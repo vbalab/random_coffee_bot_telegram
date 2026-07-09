@@ -136,6 +136,8 @@ class ScrollingSearch:
         if filters.city:
             should.append({"match": {"f_city": filters.city}})
             should.append({"match": {"f_region": filters.city}})
+        if filters.country:
+            should.append({"match": {"f_country": filters.country}})
         if filters.company:
             should.append({"match": {"f_company": filters.company}})
         # f_role RECALL only when role is the dominant intent (see RoleIsDominant):
@@ -245,6 +247,14 @@ class ScrollingSearch:
         scored: list[tuple[float, float, int, dict[Any, Any]]] = []
         for nid, (base, source) in pool.items():
             if boosts[nid] > 0 or base >= _SCORE_THRESHOLD:
+                struct = STRUCT_WEIGHT * boosts[nid] / boost_max
+                scored.append((base + struct, base, nid, source))
+        if not scored:
+            # min-max normalization flattens a lone / all-equal-score hit to base~0,
+            # so a single legitimate match with no structured boost would fall below
+            # _SCORE_THRESHOLD and be dropped — reporting a false "nothing found".
+            # We DID retrieve candidates, so keep them (ranked by base + struct).
+            for nid, (base, source) in pool.items():
                 struct = STRUCT_WEIGHT * boosts[nid] / boost_max
                 scored.append((base + struct, base, nid, source))
         if not scored:
