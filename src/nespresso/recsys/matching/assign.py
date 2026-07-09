@@ -220,31 +220,41 @@ async def SendMatchingInfo(assignments_map: dict[int, list[int]]) -> None:
     limiter = AsyncLimiter(max_rate=30, time_period=1)
 
     async def _SendToUser(assigner_chat_id: int, assigned_list: list[int]) -> None:
-        lang = await GetUserLanguage(assigner_chat_id)
+        # Isolate each recipient: one user's failure (a TelegramRetryAfter, a
+        # profile that can't be built, etc.) must not abort the whole gather and
+        # fail the pipeline — the round is already committed and other users
+        # were/will be notified, and failing here would also arm the cooldown
+        # against a retry. Log and move on.
+        try:
+            lang = await GetUserLanguage(assigner_chat_id)
 
-        # Ordered texts: greeting first, then one message per assigned profile.
-        texts: list[str] = [t(lang, "matching.intro", count=len(assigned_list))]
-        for assigned_chat_id in assigned_list:
-            assigned_nes_id = await ctx.GetTgUser(
-                chat_id=assigned_chat_id, column=TgUser.nes_id
+            # Ordered texts: greeting first, then one message per assigned profile.
+            texts: list[str] = [t(lang, "matching.intro", count=len(assigned_list))]
+            for assigned_chat_id in assigned_list:
+                assigned_nes_id = await ctx.GetTgUser(
+                    chat_id=assigned_chat_id, column=TgUser.nes_id
+                )
+                if assigned_nes_id is None:
+                    logging.error(
+                        f"chat_id={assigned_chat_id} has no nes_id during SendMatchingInfo"
+                    )
+                    continue
+                profile = await Profile.FromNesId(assigned_nes_id)
+                texts.append(profile.DescribeProfile())
+
+            # Sequential send → the greeting reliably arrives before the profiles.
+            # texts[0] is the plain greeting; texts[1:] are HTML profile cards.
+            for i, text in enumerate(texts):
+                async with limiter:
+                    await SendMessage(
+                        chat_id=assigner_chat_id,
+                        text=text,
+                        parse_mode="HTML" if i > 0 else None,
+                    )
+        except Exception:
+            logging.exception(
+                f"SendMatchingInfo: failed to notify chat_id={assigner_chat_id}"
             )
-            if assigned_nes_id is None:
-                logging.error(
-                    f"chat_id={assigned_chat_id} has no nes_id during SendMatchingInfo"
-                )
-                continue
-            profile = await Profile.FromNesId(assigned_nes_id)
-            texts.append(profile.DescribeProfile())
-
-        # Sequential send → the greeting reliably arrives before the profiles.
-        # texts[0] is the plain greeting; texts[1:] are HTML profile cards.
-        for i, text in enumerate(texts):
-            async with limiter:
-                await SendMessage(
-                    chat_id=assigner_chat_id,
-                    text=text,
-                    parse_mode="HTML" if i > 0 else None,
-                )
 
     await asyncio.gather(
         *(

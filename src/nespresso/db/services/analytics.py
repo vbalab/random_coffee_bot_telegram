@@ -11,6 +11,7 @@ class AnalyticsService:
         self.GetAllNesUsers = repo.GetAllNesUsers
         self.GetAllMessages = repo.GetAllMessages
         self.GetMatchingStats = repo.GetMatchingStats
+        self.GetFeedbackStats = repo.GetFeedbackStats
 
 
 async def GetAnalyticsService() -> AnalyticsService:

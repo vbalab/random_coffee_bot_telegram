@@ -275,8 +275,9 @@ async def _BuildMatchingStatsText(lang: str) -> str:
 
     svc = await GetAnalyticsService()
     ms = await svc.GetMatchingStats()
+    fb = await svc.GetFeedbackStats()
 
-    return t(
+    base = t(
         lang,
         "admin.stats_matching",
         eligible=len(eligible_ids),
@@ -286,6 +287,24 @@ async def _BuildMatchingStatsText(lang: str) -> str:
         last_round_date=ms["last_round_date"],
         last_round_assignments=ms["last_round_assignments"],
     )
+
+    # Close the loop: MatchFeedback rows are otherwise written but never surfaced.
+    assignments = fb["assignments"] or 0
+    responses = fb["responses"] or 0
+    rate = fb["response_rate"] or 0.0
+    assert isinstance(rate, int | float)
+    feedback = t(
+        lang,
+        "admin.stats_matching_feedback",
+        responses=responses,
+        assignments=assignments,
+        response_rate=f"{rate * 100:.1f}%",
+        met=fb["met"] or 0,
+        not_met=fb["not_met"] or 0,
+        planning=fb["planning"] or 0,
+    )
+
+    return f"{base}\n\n{feedback}"
 
 
 # --- DB export builders (one per table) ---

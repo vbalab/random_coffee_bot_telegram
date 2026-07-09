@@ -34,7 +34,10 @@ from nespresso.bot.lib.message.io import (
 )
 from nespresso.bot.lifecycle.creator import bot
 from nespresso.db.models.tg_user import TgUser
-from nespresso.db.services.user_context import GetUserContextService
+from nespresso.db.services.user_context import (
+    GetUserContextService,
+    UserContextService,
+)
 
 router = Router()
 
@@ -56,11 +59,21 @@ class AdminPanelCallbackData(CallbackData, prefix="admin_panel"):
     action: AdminPanelAction
 
 
+class BroadcastConfirmAction(StrEnum):
+    Confirm = "confirm"
+    Cancel = "cancel"
+
+
+class BroadcastConfirmCallbackData(CallbackData, prefix="broadcast_confirm"):
+    action: BroadcastConfirmAction
+
+
 class AdminPanelStates(StatesGroup):
     MessagesArgs = State()
     SendUsername = State()
     SendMessage = State()
     SendaMessage = State()
+    SendaConfirm = State()
 
 
 def AdminPanelKeyboard(lang: str) -> InlineKeyboardMarkup:
@@ -139,6 +152,19 @@ async def ShowAdminPanel(chat_id: int) -> None:
         )
 
 
+async def _ResolveAdminTarget(raw: str, ctx: UserContextService) -> int | None:
+    """
+    Resolve an admin-typed target to a chat_id, accepting EITHER a Telegram
+    @username or a NES email. A leading '@' is the username sigil; an '@' that
+    survives stripping it marks an email address (resolved from our own DB via
+    nes_email). Usernames are resolved live against Telegram.
+    """
+    stripped = raw.strip()
+    if "@" in stripped.lstrip("@"):
+        return await ctx.GetTgChatIdBy(nes_email=stripped.lower())
+    return await ResolveChatIdByUsername(stripped.replace("@", "").strip())
+
+
 # --- Back to Admin Panel ---
 
 
@@ -214,13 +240,93 @@ async def PanelSendaMessage(message: types.Message, state: FSMContext) -> None:
     ctx = await GetUserContextService()
     chat_ids = await ctx.GetVerifiedTgUsersChatId()
 
-    messages = [PersonalMsg(chat_id=chat_id, text=message.text) for chat_id in chat_ids]
+    lang = await GetUserLanguage(message.chat.id)
+    # Confirm before mass-DMing everyone: one stray tap must not blast the whole
+    # verified base. Stash the text; only an explicit Confirm actually sends.
+    await state.update_data(broadcast_text=message.text)
+    await state.set_state(AdminPanelStates.SendaConfirm)
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=t(lang, "admin.broadcast_button_confirm"),
+                    callback_data=BroadcastConfirmCallbackData(
+                        action=BroadcastConfirmAction.Confirm
+                    ).pack(),
+                ),
+                InlineKeyboardButton(
+                    text=t(lang, "admin.broadcast_button_cancel"),
+                    callback_data=BroadcastConfirmCallbackData(
+                        action=BroadcastConfirmAction.Cancel
+                    ).pack(),
+                ),
+            ]
+        ]
+    )
+    # Keep the admin's text OUT of t()'s .format() (it may contain literal
+    # braces): show the recipient count via the template, then the text verbatim.
+    header = t(lang, "admin.broadcast_confirm", count=len(chat_ids))
+    await SendMessage(
+        chat_id=message.chat.id,
+        text=f"{header}\n\n{message.text}",
+        reply_markup=keyboard,
+    )
+
+
+@router.callback_query(
+    BroadcastConfirmCallbackData.filter(F.action == BroadcastConfirmAction.Confirm)
+)
+async def PanelBroadcastConfirm(
+    callback_query: types.CallbackQuery, state: FSMContext
+) -> None:
+    assert isinstance(callback_query.message, types.Message)
+    await callback_query.answer()
+
+    lang = await GetUserLanguage(callback_query.from_user.id)
+    data = await state.get_data()
+    text = data.get("broadcast_text")
+    await state.clear()
+
+    # Drop the buttons so the broadcast can't be re-fired by a second tap.
+    try:
+        await callback_query.message.edit_reply_markup(reply_markup=None)
+    except TelegramBadRequest:
+        pass
+
+    chat_id = callback_query.message.chat.id
+    if not text:
+        await ShowAdminPanel(chat_id)
+        return
+
+    ctx = await GetUserContextService()
+    chat_ids = await ctx.GetVerifiedTgUsersChatId()
+    messages = [PersonalMsg(chat_id=cid, text=text) for cid in chat_ids]
     await SendMessagesToGroup(messages)
 
-    lang = await GetUserLanguage(message.chat.id)
-    await SendMessage(chat_id=message.chat.id, text=t(lang, "admin.broadcast_done"))
+    await SendMessage(chat_id=chat_id, text=t(lang, "admin.broadcast_done"))
+    await ShowAdminPanel(chat_id)
+
+
+@router.callback_query(
+    BroadcastConfirmCallbackData.filter(F.action == BroadcastConfirmAction.Cancel)
+)
+async def PanelBroadcastCancel(
+    callback_query: types.CallbackQuery, state: FSMContext
+) -> None:
+    assert isinstance(callback_query.message, types.Message)
+    await callback_query.answer()
     await state.clear()
-    await ShowAdminPanel(message.chat.id)
+
+    try:
+        await callback_query.message.edit_reply_markup(reply_markup=None)
+    except TelegramBadRequest:
+        pass
+
+    chat_id = callback_query.message.chat.id
+    lang = await GetUserLanguage(callback_query.from_user.id)
+    await SendMessage(chat_id=chat_id, text=t(lang, "admin.broadcast_canceled"))
+    await ShowAdminPanel(chat_id)
 
 
 # --- Blocking ---
@@ -269,8 +375,8 @@ async def PanelMessagesArgs(message: types.Message, state: FSMContext) -> None:
         return
 
     tg_username, limit_str = parts
-    chat_id = await ResolveChatIdByUsername(tg_username.replace("@", ""))
     ctx = await GetUserContextService()
+    chat_id = await _ResolveAdminTarget(tg_username, ctx)
 
     if chat_id is None or not await ctx.CheckTgUserExists(chat_id):
         await SendMessage(
@@ -320,9 +426,8 @@ async def PanelSendUsername(message: types.Message, state: FSMContext) -> None:
     assert message.text is not None
 
     lang = await GetUserLanguage(message.chat.id)
-    username = message.text.replace("@", "").strip()
-    chat_id = await ResolveChatIdByUsername(username)
     ctx = await GetUserContextService()
+    chat_id = await _ResolveAdminTarget(message.text, ctx)
 
     if chat_id is None or not await ctx.CheckTgUserExists(chat_id):
         await SendMessage(

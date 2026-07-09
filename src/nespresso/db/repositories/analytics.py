@@ -4,7 +4,12 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from nespresso.db.models.match import MatchAssignment, MatchRound
+from nespresso.db.models.match import (
+    FeedbackResponse,
+    MatchAssignment,
+    MatchFeedback,
+    MatchRound,
+)
 from nespresso.db.models.message import Message, MessageSide
 from nespresso.db.models.nes_user import NesUser
 from nespresso.db.models.tg_user import TgUser
@@ -221,4 +226,68 @@ class AnalyticsRepository:
             "total_rounds": total_rounds,
             "last_round_date": last_round_date,
             "last_round_assignments": last_round_assignments,
+        }
+
+    async def GetFeedbackStats(
+        self, round_id: int | None = None
+    ) -> dict[str, int | float | None]:
+        """
+        Feedback outcome for a matching round (defaults to the latest round).
+
+        Aggregates MatchFeedback joined to MatchAssignment, returning per-response
+        counts (met / not_met / planning) plus the response rate
+        (responses ÷ assignments) so the admin can see how the last round landed.
+        """
+        async with self.session() as session:
+            if round_id is None:
+                # Order by id to agree with GetLastRound / GetMatchingStats.
+                round_id = await session.scalar(
+                    select(MatchRound.id).order_by(MatchRound.id.desc()).limit(1)
+                )
+
+            if round_id is None:
+                return {
+                    "round_id": None,
+                    "assignments": 0,
+                    "responses": 0,
+                    "met": 0,
+                    "not_met": 0,
+                    "planning": 0,
+                    "response_rate": 0.0,
+                }
+
+            assignments = (
+                await session.scalar(
+                    select(func.count()).where(MatchAssignment.round_id == round_id)
+                )
+                or 0
+            )
+
+            counts_result = await session.execute(
+                select(MatchFeedback.response, func.count())
+                .join(
+                    MatchAssignment,
+                    MatchFeedback.assignment_id == MatchAssignment.id,
+                )
+                .where(MatchAssignment.round_id == round_id)
+                .group_by(MatchFeedback.response)
+            )
+            counts = {resp: int(cnt) for resp, cnt in counts_result.all()}
+
+        met = counts.get(FeedbackResponse.Met.value, 0)
+        not_met = counts.get(FeedbackResponse.NotMet.value, 0)
+        planning = counts.get(FeedbackResponse.Planning.value, 0)
+        # Count every feedback row (even any unexpected response value) toward the
+        # response rate, so the rate can't understate real engagement.
+        responses = sum(counts.values())
+        response_rate = responses / assignments if assignments else 0.0
+
+        return {
+            "round_id": round_id,
+            "assignments": assignments,
+            "responses": responses,
+            "met": met,
+            "not_met": not_met,
+            "planning": planning,
+            "response_rate": response_rate,
         }

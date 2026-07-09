@@ -4,7 +4,10 @@ from cachetools import TTLCache
 
 from nespresso.bot.lifecycle.creator import bot
 from nespresso.db.models.tg_user import TgUser
-from nespresso.db.services.user_context import GetUserContextService
+from nespresso.db.services.user_context import (
+    GetUserContextService,
+    UserContextService,
+)
 
 
 async def ResolveChatIdByUsername(username: str) -> int | None:
@@ -67,6 +70,32 @@ async def GetTgUsername(chat_id: int) -> str | None:
     except Exception as e:
         logging.warning(f"Failed to get chat info for chat_id={chat_id}: {e}")
         return None
+
+
+async def ResolveDisplayName(ctx: UserContextService, chat_id: int) -> str | None:
+    """
+    Best user-facing name for a matched user: prefer the live Telegram
+    @username, fall back to their NES profile name, and otherwise return None so
+    the caller can supply a generic label. NEVER returns the raw telegram
+    chat_id — that must not be shown to users.
+
+    Single source of truth for "username → NES name" resolution (previously
+    duplicated as _DemoLabel / _DisplayName in the matching handler).
+    """
+    try:
+        handle = await GetTgUsername(chat_id)
+        if handle:
+            return f"@{handle}"
+    except Exception:
+        logging.debug(f"no username for chat_id={chat_id}", exc_info=True)
+
+    nes_id = await ctx.GetTgUser(chat_id, TgUser.nes_id)
+    if nes_id:
+        nes_user = await ctx.GetNesUser(nes_id)
+        if nes_user and nes_user.name:
+            return nes_user.name
+
+    return None
 
 
 async def GetChatUserLoggingPart(chat_id: int) -> str:
