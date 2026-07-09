@@ -33,9 +33,12 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
+from sqlalchemy import and_
+
 from nespresso.api.request import FetchUsersList
 from nespresso.db.models.nes_user import NesUser
 from nespresso.db.models.schemas.nes_user import NesUserIn
+from nespresso.db.models.tg_user import TgUser
 from nespresso.db.services.user_context import GetUserContextService
 from nespresso.recsys.searching.document import (
     BuildProfileText,
@@ -274,30 +277,63 @@ async def _RunSync(report: SyncReport) -> None:
     await EnsureOpenSearchIndex()
     present_ids = await PresentDocIds()
 
+    # Bot-blocked users (admin-blocked, or they blocked the bot) must NEVER be
+    # searchable, even though they stay listed alumni in the directory feed.
+    # `_UnverifyUser` (block.py) deletes their OpenSearch doc, but the missing-doc
+    # reconciliation below would re-index them (`nid not in present_ids` ⇒
+    # "changed"). Exclude them from the (re)index set, and drop any doc still
+    # indexed from before the block / an earlier sync. One query; the blocked set
+    # is tiny.
+    blocked_nes_ids = set(
+        await ctx.GetTgUsersOnCondition(
+            condition=and_(TgUser.blocked.is_(True), TgUser.nes_id.isnot(None)),
+            column=TgUser.nes_id,
+        )
+    )
+
     old_hashes = await ctx.GetNesUserHashes(fresh_ids)
     # "changed" = new, modified, previously-delisted (delist clears the stored
-    # hash), OR missing from the index. Unchanged-listed-and-present profiles need
-    # NO work this run — not re-embedding and not even a DB write — which is what
-    # keeps the steady state cheap (typically a handful of rows, not all ~3k).
+    # hash), OR missing from the index — EXCLUDING bot-blocked alumni (never
+    # re-indexed). Unchanged-listed-and-present profiles need NO work this run —
+    # not re-embedding and not even a DB write — which is what keeps the steady
+    # state cheap (typically a handful of rows, not all ~3k).
     changed = [
         nid
         for nid in fresh_ids
-        if new_hashes[nid] != old_hashes.get(nid) or nid not in present_ids
+        if (new_hashes[nid] != old_hashes.get(nid) or nid not in present_ids)
+        and nid not in blocked_nes_ids
     ]
     report.changed = len(changed)
 
     # Surface a silent partial-index loss: profiles the DB thinks are indexed
     # (hash matches) yet are absent from the index — these are now being healed.
+    # Blocked alumni are excluded (they are intentionally absent, not healed).
     missing = sum(
         1
         for nid in fresh_ids
-        if nid not in present_ids and new_hashes[nid] == old_hashes.get(nid)
+        if nid not in present_ids
+        and new_hashes[nid] == old_hashes.get(nid)
+        and nid not in blocked_nes_ids
     )
     if missing:
         logging.warning(
             f"MyNES sync: {missing} listed profiles were missing from the search "
             f"index despite an unchanged hash — re-indexing them (index had "
             f"{len(present_ids)} docs, feed has {len(fresh_ids)} listed)."
+        )
+
+    # Drop any blocked-but-listed alumnus still present in the index (indexed
+    # before the block, or re-indexed by a sync that predates this guard). Their
+    # DB row is left untouched — this only revokes searchability.
+    blocked_indexed = [
+        nid for nid in fresh_ids if nid in blocked_nes_ids and nid in present_ids
+    ]
+    if blocked_indexed:
+        await BulkDeleteOpenSearch(blocked_indexed)
+        logging.info(
+            "MyNES sync: dropped %d blocked-but-listed alumnus doc(s) from the "
+            "search index.",
+            len(blocked_indexed),
         )
 
     # Embed + index only changed profiles, batch by batch. The unified text

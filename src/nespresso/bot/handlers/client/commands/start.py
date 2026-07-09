@@ -325,7 +325,20 @@ async def CommandStartEmailGet(message: types.Message, state: FSMContext) -> Non
     _last_code_sent_at[email] = now
 
     code = CreateCode()
-    await SendCode(email=email, code=code)
+    try:
+        await SendCode(email=email, code=code)
+    except Exception:
+        # A transient SMTP failure must not reach the global error handler (which
+        # CLEARS the FSM state and loses registration progress). Nothing was sent,
+        # so roll back the send-rate stamp (retry immediately) and stay in EmailGet.
+        logging.exception(f"SendCode failed for chat_id={chat_id}")
+        _last_code_sent_at.pop(email, None)
+        await SendMessage(
+            chat_id=chat_id,
+            text=t(lang, "start.email_check_failed"),
+            context=ContextIO.UserFailed,
+        )
+        return
 
     await SendMessage(
         chat_id=chat_id,
@@ -412,6 +425,27 @@ async def CommandStartEmailConfirm(message: types.Message, state: FSMContext) ->
         return
 
     ctx = await GetUserContextService()
+
+    # Directory-shared gate: a correct code proves identity, but registration only
+    # COMPLETES for an alumnus actually shared in the MyNES directory
+    # (NesUser.listed). A real alum can resolve + receive + confirm a code while
+    # their profile is unlisted (row missing, or delisted with listed=False), but
+    # we must NOT verify / show the hub until they enable "Show in a class'
+    # directory" on my.nes.ru. Keep them at the confirm step (state/code unchanged)
+    # so re-entering the code once the sync reflects listed=True finishes the flow.
+    nes_user = await ctx.GetNesUser(nes_id)
+    if nes_user is None or not nes_user.listed:
+        logging.info(
+            f"EmailConfirm: nes_id={nes_id} verified by code but not shared in the "
+            f"directory (chat_id={chat_id}); blocking completion until listed."
+        )
+        await SendMessage(
+            chat_id=chat_id,
+            text=t(lang, "start.email_not_shared"),
+            context=ContextIO.UserFailed,
+        )
+        return
+
     try:
         await ctx.UpdateTgUser(chat_id=chat_id, column=TgUser.nes_id, value=nes_id)
         # No terms-of-use step: a correct code completes registration outright.
