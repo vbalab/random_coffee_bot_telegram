@@ -18,7 +18,6 @@ from nespresso.recsys.searching.filtering import (
     CandidateCard,
     RoleIsDominant,
     StructuredBoost,
-    _uni_substrings,
 )
 from nespresso.recsys.searching.index import INDEX_NAME, DocAttr
 from nespresso.recsys.searching.llm.query_understanding import ParseQuery, QueryFilters
@@ -145,9 +144,9 @@ class ScrollingSearch:
         # flood the pool with title-only matches.
         if RoleIsDominant(filters):
             should.append({"match": {"f_role": filters.role}})
-        if filters.university:
-            for sub in _uni_substrings(filters.university):
-                should.append({"match": {"f_universities": sub}})
+        # No `university` recall clause: university matching flows through the
+        # enrichment-glossed text (semantic lane) + the reranker, not a hand-coded
+        # alias table. See StructuredBoost / DIRECTORY_KNOWLEDGE.
         if not should:
             return None
 

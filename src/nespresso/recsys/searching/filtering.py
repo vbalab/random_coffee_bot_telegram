@@ -40,34 +40,8 @@ from nespresso.recsys.searching.llm.query_understanding import QueryFilters
 # profiles reach the reranker. No filters -> boost 0 -> pure hybrid order stands.
 STRUCT_WEIGHT = 1.0
 
-# University abbreviations → a distinctive substring of the stored full name.
-_UNI_ALIASES: dict[str, str] = {
-    "мгу": "ломоносов", "msu": "ломоносов", "lomonosov": "ломоносов",
-    "мфти": "физико-техническ", "физтех": "физико-техническ",
-    "mipt": "физико-техническ", "phystech": "физико-техническ",
-    "вшэ": "высшая школа экономики", "вышка": "высшая школа экономики",
-    "hse": "высшая школа экономики",
-    "нгу": "новосибирский государственный",
-    "бауман": "баумана", "bauman": "баумана",
-    "мифи": "мифи", "mephi": "мифи",
-    "финуниверситет": "финансовый университет",
-    "плеханов": "плеханова", "рэу": "плеханова",
-    "спбгу": "санкт-петербургский государственный",
-    "мгимо": "международных отношений", "mgimo": "международных отношений",
-    "ранхигс": "народного хозяйства",
-    "маи": "авиационный",
-}
-
-
 def _n(s: object) -> str:
     return " ".join(str(s or "").casefold().split())
-
-
-def _uni_substrings(university: str) -> list[str]:
-    u = _n(university)
-    subs = {val for key, val in _UNI_ALIASES.items() if key in u}
-    subs.add(u)
-    return [s for s in subs if s]
 
 
 def StructuredFields(nes_user: Any) -> dict[str, Any]:
@@ -182,10 +156,12 @@ def StructuredBoost(filters: QueryFilters, doc: dict[str, Any]) -> float:
         if any(v in f_role for v in variants):
             boost += 3
 
-    if filters.university:
-        unis = _n(doc.get("f_universities"))
-        if any(sub in unis for sub in _uni_substrings(filters.university)):
-            boost += 3
+    # NOTE: no `university` term. University matching is handled the same way as
+    # employers — via the index-time enrichment glossing (МГУ / MSU / Ломоносова,
+    # Bocconi / Боккони, …) which feeds BM25 + embedding recall, and the reranker
+    # (which sees "studied: <f_universities>" in the card) for precision. The old
+    # hand-coded _UNI_ALIASES table was a redundant, buggy second copy of the
+    # university knowledge that already lives in DIRECTORY_KNOWLEDGE.
 
     return boost
 
