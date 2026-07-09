@@ -30,14 +30,15 @@ from nespresso.recsys.searching.llm.query_understanding import QueryFilters
 #
 #     final = base + STRUCT_WEIGHT * boost_norm
 #
-# STRUCT_WEIGHT=1.5 keeps the structured lane on the same order as `base` (ceiling
-# 1.5 vs 1.0) — enough that sparse purely-structured queries (e.g. "МАЭ 2002 men")
-# stay in the top-K rerank window, but ~20× below the old flat +10*boost step.
-# The point isn't the exact number: a strongly-relevant BM25/KNN candidate that
-# misses one structured field now sits just behind the filter-matchers (inside the
-# rerank window) instead of 50 ranks back, so the LLM reranker judges them
-# head-to-head on the raw query. No filters -> boost 0 -> pure hybrid order stands.
-STRUCT_WEIGHT = 1.5
+# STRUCT_WEIGHT=1.0 gives the structured lane the SAME ceiling as the hybrid base
+# (1.0), so a filter match is a true PEER of the semantic signal — it can never
+# categorically override a strongly-relevant BM25/KNN candidate. The weight alone
+# cannot fully prevent flooding (a high-frequency filter lifts ALL its matchers
+# together, so >N of them still fill a top-N-by-score window); that is solved
+# structurally by RESERVING rerank slots for pure-semantic candidates (see
+# _RERANK_SEMANTIC_SLOTS in search.py), which is what actually guarantees relevant
+# profiles reach the reranker. No filters -> boost 0 -> pure hybrid order stands.
+STRUCT_WEIGHT = 1.0
 
 # University abbreviations → a distinctive substring of the stored full name.
 _UNI_ALIASES: dict[str, str] = {

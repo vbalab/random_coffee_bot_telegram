@@ -35,6 +35,10 @@ _FETCH_SIZE = (
 _KNN_LIMIT = 30
 _SCORE_THRESHOLD = 0.1  # drop semantic-only results below this normalized score
 _DISPLAY_LIMIT = 30  # pages materialized per chunk; more load as the user scrolls
+# Of the RERANK_CANDIDATES rerank slots, reserve this many for the strongest
+# pure-semantic (base-only) candidates, so a high-frequency filter can't flood the
+# window and evict them before the reranker sees them. (25 combined + 5 semantic.)
+_RERANK_SEMANTIC_SLOTS = 5
 
 
 @dataclass
@@ -236,25 +240,39 @@ class ScrollingSearch:
         # is semantically relevant. (See STRUCT_WEIGHT.)
         boosts = {nid: StructuredBoost(filters, src) for nid, (_b, src) in pool.items()}
         boost_max = max(boosts.values(), default=0.0) or 1.0
-        scored: list[tuple[float, int, dict[Any, Any]]] = []
+        # Each entry: (combined_score, base, nid, source). `base` is kept so the
+        # rerank window can reserve slots by PURE semantic score (below).
+        scored: list[tuple[float, float, int, dict[Any, Any]]] = []
         for nid, (base, source) in pool.items():
             if boosts[nid] > 0 or base >= _SCORE_THRESHOLD:
                 struct = STRUCT_WEIGHT * boosts[nid] / boost_max
-                scored.append((base + struct, nid, source))
+                scored.append((base + struct, base, nid, source))
         if not scored:
             return None
-        scored.sort(key=lambda x: x[0], reverse=True)
+        scored.sort(key=lambda x: x[0], reverse=True)  # by combined score
 
-        # Rerank only the top window; the tail keeps re-score order. The full list
-        # is paginated lazily (a chunk of pages built on demand as the user scrolls).
-        order_ids = [nid for _, nid, _ in scored]
+        # Rerank the top window; the tail keeps re-score order (paginated lazily).
+        # The window is NOT simply the top-N by combined score: a high-frequency
+        # filter lifts ALL its matchers above every non-matcher, so >N matchers
+        # would fill the window and evict genuinely-relevant profiles before the
+        # reranker ever sees them. So reserve the last `_RERANK_SEMANTIC_SLOTS` for
+        # the strongest PURE-SEMANTIC (base-only) candidates not already included.
+        order_ids = [nid for _, _, nid, _ in scored]
         if settings.RERANK_ENABLED and len(scored) > 1:
-            window = scored[: settings.RERANK_CANDIDATES]
-            candidates = [(nid, CandidateCard(src)) for _, nid, src in window]
+            n_combined = settings.RERANK_CANDIDATES - _RERANK_SEMANTIC_SLOTS
+            window = scored[:n_combined]
+            picked = {nid for _, _, nid, _ in window}
+            semantic_extra = sorted(
+                (s for s in scored[n_combined:] if s[2] not in picked),
+                key=lambda x: x[1],  # base (pure semantic) desc
+                reverse=True,
+            )[:_RERANK_SEMANTIC_SLOTS]
+            window = window + semantic_extra
+            window_ids = {nid for _, _, nid, _ in window}
+            candidates = [(nid, CandidateCard(src)) for _, _, nid, src in window]
             reranked = await Rerank(text, candidates)
-            order_ids = reranked + [
-                nid for _, nid, _ in scored[settings.RERANK_CANDIDATES :]
-            ]
+            tail = [nid for _, _, nid, _ in scored if nid not in window_ids]
+            order_ids = reranked + tail
 
         self._order_ids = order_ids
         await self._MaterializeNextChunk()  # first _DISPLAY_LIMIT pages
