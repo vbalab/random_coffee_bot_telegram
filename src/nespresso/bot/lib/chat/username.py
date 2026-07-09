@@ -6,6 +6,28 @@ from nespresso.bot.lifecycle.creator import bot
 from nespresso.db.models.tg_user import TgUser
 from nespresso.db.services.user_context import GetUserContextService
 
+
+async def ResolveChatIdByUsername(username: str) -> int | None:
+    """
+    Resolve a Telegram @username to its CURRENT chat_id, straight from Telegram
+    — never from our own (potentially stale) `TgUser.username` column.
+
+    Why this matters: `TgUser.username` is only refreshed opportunistically
+    (see `GetTgUsername` below), so a DB-keyed lookup can point at whoever held
+    that username WHEN we last saw it. Telegram usernames can be released and
+    re-claimed by someone else; an admin typing "@old_handle" from memory (or a
+    stale screenshot) could otherwise have an action land on a completely
+    different, currently-unrelated person who has since squatted that handle.
+    `bot.get_chat` asks Telegram directly, so it always resolves to whoever
+    owns the username right now.
+    """
+    try:
+        chat = await bot.get_chat(f"@{username}")
+    except Exception:
+        logging.debug(f"Could not resolve @{username} via live get_chat", exc_info=True)
+        return None
+    return chat.id
+
 # Cache live usernames briefly to avoid hammering Telegram + DB on every
 # inbound/outbound message (GetChatUserLoggingPart fires per message).
 _USERNAME_CACHE: TTLCache[int, str | None] = TTLCache(maxsize=10000, ttl=300)

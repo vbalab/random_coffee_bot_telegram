@@ -1,9 +1,11 @@
 import asyncio
 import logging
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, TypeVar
+from urllib.parse import quote
 
 import httpx
 from pydantic import ValidationError
@@ -118,9 +120,19 @@ async def FetchUsersList() -> list[NesUserIn]:
 # when the synced directory has no email for it yet.                           #
 
 
+# Strict shape for the ONLY path this ever needs to accept: a bare NES alumni
+# address, no path/query/fragment characters or whitespace in the local part.
+# Defends the upstream MyNES API path segment against injection even though
+# the bot-side caller (start.py) already applies a looser `.endswith` check.
+_NES_EMAIL_RE = re.compile(r"^[^@\s/?#]+@nes\.ru$", re.IGNORECASE)
+
+
 async def _FetchNesUserData(nes_email: str) -> dict[str, Any]:
+    if not _NES_EMAIL_RE.match(nes_email):
+        raise ValueError(f"Refusing to query MyNES with a malformed email: {nes_email!r}")
+
     base_url = settings.NES_API_BASE_URL.rstrip("/")
-    url = f"{base_url}/user/byEmail/{nes_email}"
+    url = f"{base_url}/user/byEmail/{quote(nes_email, safe='')}"
 
     response = await _SendWithRetry(
         lambda: _http_client.get(url, headers={"accept": "application/json"}),

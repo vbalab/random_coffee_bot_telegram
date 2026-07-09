@@ -1,6 +1,8 @@
 import logging
+from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import select, update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from nespresso.db.models.match import MatchAssignment, MatchFeedback, MatchRound
@@ -12,16 +14,37 @@ class MatchRepository:
 
     # ----- MatchRound -----
 
-    async def CreateRound(self, triggered_by: int) -> MatchRound:
+    async def CreateRoundWithAssignments(
+        self, triggered_by: int, assignments: list[tuple[int, int]]
+    ) -> tuple[MatchRound, list[MatchAssignment]]:
+        """
+        Create the round AND its assignments in ONE transaction, so a failure
+        partway through can never leave an orphan round with zero assignments
+        (which CreateRound + a separate CreateAssignments call could).
+        """
         async with self.session() as session:
             round_ = MatchRound(triggered_by=triggered_by)
             session.add(round_)
+            await session.flush()  # assigns round_.id without committing yet
+
+            objs = [
+                MatchAssignment(
+                    round_id=round_.id,
+                    assigner_chat_id=assigner,
+                    assigned_chat_id=assigned,
+                )
+                for assigner, assigned in assignments
+            ]
+            session.add_all(objs)
             await session.commit()
             await session.refresh(round_)
+            for obj in objs:
+                await session.refresh(obj)
             logging.info(
-                f"MatchRound(id={round_.id}) created by chat_id={triggered_by}"
+                f"MatchRound(id={round_.id}) created by chat_id={triggered_by} "
+                f"with {len(objs)} assignments"
             )
-            return round_
+            return round_, objs
 
     async def GetLastRound(self) -> MatchRound | None:
         async with self.session() as session:
@@ -30,29 +53,16 @@ class MatchRepository:
             )
             return result.scalar_one_or_none()
 
-    # ----- MatchAssignment -----
-
-    async def CreateAssignments(
-        self, round_id: int, assignments: list[tuple[int, int]]
-    ) -> list[MatchAssignment]:
-        """assignments: list of (assigner_chat_id, assigned_chat_id)"""
+    async def MarkFeedbackSent(self, round_id: int) -> None:
         async with self.session() as session:
-            objs = [
-                MatchAssignment(
-                    round_id=round_id,
-                    assigner_chat_id=assigner,
-                    assigned_chat_id=assigned,
-                )
-                for assigner, assigned in assignments
-            ]
-            session.add_all(objs)
-            await session.commit()
-            for obj in objs:
-                await session.refresh(obj)
-            logging.info(
-                f"Created {len(objs)} MatchAssignments for round_id={round_id}"
+            await session.execute(
+                update(MatchRound)
+                .where(MatchRound.id == round_id)
+                .values(feedback_sent_at=datetime.now(timezone.utc))
             )
-            return objs
+            await session.commit()
+
+    # ----- MatchAssignment -----
 
     async def GetAssignmentsByRound(self, round_id: int) -> list[MatchAssignment]:
         async with self.session() as session:
@@ -60,6 +70,13 @@ class MatchRepository:
                 select(MatchAssignment).where(MatchAssignment.round_id == round_id)
             )
             return list(result.scalars().all())
+
+    async def GetAssignment(self, assignment_id: int) -> MatchAssignment | None:
+        async with self.session() as session:
+            result = await session.execute(
+                select(MatchAssignment).where(MatchAssignment.id == assignment_id)
+            )
+            return result.scalar_one_or_none()
 
     async def GetRecentExcludedPairs(
         self, last_n_rounds: int = 2
@@ -85,19 +102,22 @@ class MatchRepository:
     # ----- MatchFeedback -----
 
     async def UpsertFeedback(self, assignment_id: int, response: str) -> None:
+        """
+        Atomic upsert (INSERT ... ON CONFLICT), backed by the unique index on
+        MatchFeedback.assignment_id — a select-then-branch here would let two
+        concurrent calls (double-tap, redelivered callback) both see "no row yet"
+        and both insert, leaving duplicate/contradictory feedback for one
+        assignment.
+        """
         async with self.session() as session:
-            # Check if feedback already exists
-            existing = await session.execute(
-                select(MatchFeedback).where(
-                    MatchFeedback.assignment_id == assignment_id
-                )
+            stmt = insert(MatchFeedback).values(
+                assignment_id=assignment_id, response=response
             )
-            obj = existing.scalar_one_or_none()
-            if obj:
-                obj.response = response
-            else:
-                obj = MatchFeedback(assignment_id=assignment_id, response=response)
-                session.add(obj)
+            stmt = stmt.on_conflict_do_update(
+                index_elements=[MatchFeedback.assignment_id],
+                set_={"response": stmt.excluded.response},
+            )
+            await session.execute(stmt)
             await session.commit()
             logging.info(
                 f"MatchFeedback upserted: assignment_id={assignment_id}, response={response}"

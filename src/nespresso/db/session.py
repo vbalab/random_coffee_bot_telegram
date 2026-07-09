@@ -126,3 +126,49 @@ async def EnsureDB() -> None:
                 text("UPDATE tg_user SET is_admin = TRUE WHERE chat_id = :chat_id"),
                 {"chat_id": admin_id},
             )
+
+        # Best-effort: enforce one verified TgUser per nes_id. Isolated in its own
+        # SAVEPOINT because on a database that already has duplicate verified rows
+        # for the same nes_id (the exact bug this closes), CREATE UNIQUE INDEX
+        # fails — and without the savepoint that failure would poison every
+        # statement after it in this transaction, breaking startup entirely.
+        try:
+            async with conn.begin_nested():
+                await conn.execute(
+                    text(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS "
+                        "ix_tg_user_nes_id_verified_uniq ON tg_user (nes_id) "
+                        "WHERE verified = true"
+                    )
+                )
+        except Exception:
+            logging.warning(
+                "Could not create unique index on tg_user(nes_id) WHERE verified "
+                "— there are likely pre-existing duplicate verified rows for the "
+                "same nes_id that need manual cleanup first.",
+                exc_info=True,
+            )
+
+        try:
+            async with conn.begin_nested():
+                await conn.execute(
+                    text(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS "
+                        "ix_match_feedback_assignment_id_uniq "
+                        "ON match_feedback (assignment_id)"
+                    )
+                )
+        except Exception:
+            logging.warning(
+                "Could not create unique index on match_feedback(assignment_id) "
+                "— there are likely pre-existing duplicate feedback rows for the "
+                "same assignment that need manual cleanup first.",
+                exc_info=True,
+            )
+
+        await conn.execute(
+            text(
+                "ALTER TABLE match_round ADD COLUMN IF NOT EXISTS "
+                "feedback_sent_at TIMESTAMPTZ"
+            )
+        )

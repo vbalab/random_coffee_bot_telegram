@@ -17,6 +17,13 @@ class MatchRound(Base):
         server_default=text("CURRENT_TIMESTAMP"),
         nullable=False,
     )
+    # Set the first time "Send Feedback Request" successfully runs for this
+    # round, so a repeat tap can be refused instead of re-spamming every
+    # matched user with a fresh set of feedback buttons.
+    feedback_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
 
 
 class MatchAssignment(Base):
@@ -46,7 +53,10 @@ class MatchFeedback(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     assignment_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("match_assignment.id", ondelete="CASCADE"), nullable=False
+        Integer,
+        ForeignKey("match_assignment.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
     )
     response: Mapped[str] = mapped_column(String, nullable=False)
     created_at: Mapped[datetime] = mapped_column(

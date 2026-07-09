@@ -13,6 +13,8 @@
   "start.sent_code": "We've sent you a code.\nPlease provide it here",
   "start.code_invalid": "The code is incorrect.\nPlease try again",
   "start.code_attempts_exhausted": "You've entered the wrong code 3 times.\nPlease wait {minutes} minutes before trying again.",
+  "start.code_expired": "⏰ This code has expired.\nPlease enter your email again to get a new one.",
+  "start.code_rate_limited": "Please wait {seconds} more second(s) before requesting another code for this email.",
   "start.email_cooldown": "Please wait {minutes} more minute(s) before entering your email again.",
   "start.verified": "🎉 You've become a verified user with full access to bot's functionality!",
   "start.about_prompt": "Would you like to write a short bio about yourself? It helps other alumni get to know you.",
@@ -44,6 +46,7 @@
   "help.admin_notification": "🆘 Help request from {username} (ID: {chat_id})",
 
   "find.enter_query": "Type text to search for a person",
+  "find.rate_limited": "Please wait a moment before searching again.",
   "find.too_long": "Your text is too long.\nPlease, reduce it by {percent}%",
   "find.searching": "Doing search.\nPlease, wait",
   "find.not_found": "Found nothing",
@@ -85,6 +88,7 @@
   "admin.title_button_edit_ru": "✏️ Edit RU",
   "admin.title_enter_en": "Send the new English hub title:",
   "admin.title_enter_ru": "Send the new Russian hub title:",
+  "admin.title_blank": "❌ The title can't be blank — that would break the hub for every user. Please send some actual text.",
 
   "admin.mynes_header": "🎓 MyNES Directory Sync\n\nAlumni profiles are mirrored from the MyNES directory automatically every hour (Postgres + search index). Use the button below to run a sync right now.",
   "admin.mynes_button_sync": "🔄 Sync from directory now",
@@ -138,10 +142,13 @@
   "admin.matching_running": "⏳ Running matching… please wait.",
   "admin.matching_done": "✅ Matching complete. {count} users received matches.",
   "admin.matching_failed": "❌ Matching failed. Check logs.",
+  "admin.matching_in_progress": "⏳ A matching round is already being created right now. Please wait for it to finish.",
+  "admin.matching_cooldown": "⏳ A round was already run recently. Please wait about {minutes} more minute(s) before running another.",
   "admin.matching_notify_started": "ℹ️ {actor} started a matching round.",
   "admin.matching_no_rounds": "No matching rounds have been run yet.",
   "admin.matching_no_assignments": "No assignments found in the last round.",
   "admin.matching_feedback_sent": "✅ Feedback requests sent for {count} assignments.",
+  "admin.matching_feedback_already_sent": "❌ Feedback was already requested for the last round (on {when}). Run a new matching round before requesting feedback again.",
 
   "matching.intro": "👋 Hi! This is NESpresso — the New Economic School alumni networking bot you registered with.\n\nEvery so often we run a matching round: alumni get paired up to meet — a coffee, a call, whatever works. A new round just started, and we picked {count} fellow alum for you.\n\nI'll send their profile(s) in the next message(s). Take a look and feel free to reach out to set something up. ☕️",
   "matching.feedback_question": "👋 Hi! A quick follow-up on your last NESpresso matching round — were you able to connect with {name}?",
@@ -150,6 +157,7 @@
   "matching.feedback_not_met": "❌ No",
   "matching.feedback_planning": "📅 Planning to",
   "matching.feedback_thanks": "Thanks for the feedback!",
+  "matching.feedback_invalid": "This feedback request is no longer valid.",
 
   "admin.stats_header": "📊 Statistics\n\nChoose a category to view:",
   "admin.stats_button_users": "👥 Users",
@@ -178,6 +186,8 @@
   "common.yes": "Yes",
   "common.no": "No",
   "common.canceled": "Canceled",
+  "common.button_outdated": "This button is outdated. Please use /start to reopen the menu.",
+  "common.spam_blocked": "🚫 You've been sending messages too fast. You're temporarily blocked for 1 hour due to spamming — please try again after that.",
   "zero.not_in_command": "You're not in a command right now.\nUse /start to open the menu",
   "zero.not_text_idle": "The bot only works with text messages.\nUse /start to open the menu",
   "zero.not_text_in_state": "The bot only works with text messages\nTry again"

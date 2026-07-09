@@ -11,7 +11,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from nespresso.bot.handlers.admin.commands.back import BackToAdminPanelCallbackData
 from nespresso.bot.lib.chat.block import BlockUser, CheckIfBlocked, UnblockUser
-from nespresso.bot.lib.chat.username import GetTgUsername
+from nespresso.bot.lib.chat.username import GetTgUsername, ResolveChatIdByUsername
 from nespresso.bot.lib.hub_state import HUB_MESSAGES
 from nespresso.bot.lib.message.i18n import GetUserLanguage, t
 from nespresso.bot.lib.message.io import (
@@ -194,10 +194,10 @@ async def BlockingPanelBlockUsername(message: types.Message, state: FSMContext) 
 
     lang = await GetUserLanguage(message.chat.id)
     username = message.text.replace("@", "").strip()
+    chat_id = await ResolveChatIdByUsername(username)
     ctx = await GetUserContextService()
-    chat_id = await ctx.GetTgChatIdBy(tg_username=username)
 
-    if chat_id is None:
+    if chat_id is None or not await ctx.CheckTgUserExists(chat_id):
         await SendMessage(
             chat_id=message.chat.id,
             text=t(lang, "admin.blocking_not_found", username=username),
@@ -269,10 +269,10 @@ async def BlockingPanelUnblockUsername(
 
     lang = await GetUserLanguage(message.chat.id)
     username = message.text.replace("@", "").strip()
+    chat_id = await ResolveChatIdByUsername(username)
     ctx = await GetUserContextService()
-    chat_id = await ctx.GetTgChatIdBy(tg_username=username)
 
-    if chat_id is None:
+    if chat_id is None or not await ctx.CheckTgUserExists(chat_id):
         await SendMessage(
             chat_id=message.chat.id,
             text=t(lang, "admin.blocking_not_found", username=username),

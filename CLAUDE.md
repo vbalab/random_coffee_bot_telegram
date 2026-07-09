@@ -506,12 +506,13 @@ await ctx.RegisterOutgoingMessage(message)
 await ctx.GetRecentMessages(chat_id, limit=20)
 
 # Matching
-await ctx.CreateRound(triggered_by)                    # → MatchRound
+await ctx.CreateRoundWithAssignments(triggered_by, [(a, b), ...])  # → (MatchRound, list[MatchAssignment]), one transaction
 await ctx.GetLastRound()                               # → MatchRound | None
-await ctx.CreateAssignments(round_id, [(a, b), ...])   # → list[MatchAssignment]
+await ctx.MarkFeedbackSent(round_id)                   # stamps MatchRound.feedback_sent_at
 await ctx.GetAssignmentsByRound(round_id)              # → list[MatchAssignment]
+await ctx.GetAssignment(assignment_id)                 # → MatchAssignment | None
 await ctx.GetRecentExcludedPairs(last_n_rounds=2)      # → set[tuple[int, int]]
-await ctx.UpsertFeedback(assignment_id, response)
+await ctx.UpsertFeedback(assignment_id, response)      # atomic INSERT ... ON CONFLICT
 ```
 
 ### `AnalyticsService`
@@ -561,12 +562,13 @@ TgUserRepository methods:
   - UpdateTgUser(chat_id, column, value)
 
 MatchRepository methods:
-  - CreateRound(triggered_by)             → MatchRound
+  - CreateRoundWithAssignments(triggered_by, pairs) → (MatchRound, list[MatchAssignment]), one transaction
   - GetLastRound()                        → MatchRound | None
-  - CreateAssignments(round_id, pairs)    → list[MatchAssignment]
+  - MarkFeedbackSent(round_id)
   - GetAssignmentsByRound(round_id)       → list[MatchAssignment]
+  - GetAssignment(assignment_id)          → MatchAssignment | None
   - GetRecentExcludedPairs(last_n_rounds) → set[tuple[int, int]]
-  - UpsertFeedback(assignment_id, response)
+  - UpsertFeedback(assignment_id, response)  # atomic INSERT ... ON CONFLICT (assignment_id)
 
 AnalyticsRepository methods:
   - GetTgUserStats()       → dict

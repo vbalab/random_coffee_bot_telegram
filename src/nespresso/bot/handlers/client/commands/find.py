@@ -1,5 +1,6 @@
 import logging
 import math
+import time
 import uuid
 from enum import Enum
 
@@ -9,22 +10,34 @@ from aiogram.filters.state import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from cachetools import TTLCache
 
 from nespresso.bot.lib.message.i18n import GetUserLanguage, t
 from nespresso.bot.lib.message.io import ContextIO, SendMessage
 from nespresso.db.models.tg_user import TgUser
 from nespresso.db.services.user_context import GetUserContextService
 from nespresso.recsys.searching.preprocessing.embedding import CalculateTokenLen
-from nespresso.recsys.searching.preprocessing.model import TOKEN_LEN
-from nespresso.recsys.searching.search import SEARCHES, Page, ScrollingSearch
+from nespresso.recsys.searching.preprocessing.model import TOKEN_LEN, RunInference
+from nespresso.recsys.searching.search import (
+    SEARCHES,
+    Page,
+    RegisterSearch,
+    ScrollingSearch,
+)
 
 router = Router()
 
+# Minimum gap between two searches from the same user. Find is the one
+# interactive flow with no rate limit, and every query funnels through the
+# shared single-worker inference executor (see model.py) plus an LLM parser
+# call — without this, one user hammering the button degrades search latency
+# for everyone else on the bot.
+_SEARCH_COOLDOWN_SECONDS = 3.0
+_last_search_at: TTLCache[int, float] = TTLCache(maxsize=10000, ttl=60)
 
-def PercentageToReduce(text: str) -> int:
-    length = CalculateTokenLen(text)
 
-    result: int = math.ceil((length - TOKEN_LEN) / length * 10)
+def PercentageToReduce(token_len: int) -> int:
+    result: int = math.ceil((token_len - TOKEN_LEN) / token_len * 10)
     return result * 10
 
 
@@ -75,15 +88,32 @@ def FindKeyboard(
 async def CommandFindText(message: types.Message, state: FSMContext) -> None:
     assert message.text is not None
 
-    lang = await GetUserLanguage(message.chat.id)
+    chat_id = message.chat.id
+    lang = await GetUserLanguage(chat_id)
 
-    if CalculateTokenLen(message.text) > TOKEN_LEN:
+    now = time.monotonic()
+    last_search = _last_search_at.get(chat_id)
+    if last_search is not None and now - last_search < _SEARCH_COOLDOWN_SECONDS:
         await SendMessage(
-            chat_id=message.chat.id,
+            chat_id=chat_id,
+            text=t(lang, "find.rate_limited"),
+            context=ContextIO.UserFailed,
+        )
+        return
+    _last_search_at[chat_id] = now
+
+    # Off the event loop AND serialized with every other tokenizer/encoder call
+    # via the shared single-worker executor — calling CalculateTokenLen directly
+    # here would race the same non-thread-safe tokenizer used by the encoder
+    # thread for other users' concurrent searches (see model.py).
+    token_len = await RunInference(CalculateTokenLen, message.text)
+    if token_len > TOKEN_LEN:
+        await SendMessage(
+            chat_id=chat_id,
             text=t(
                 lang,
                 "find.too_long",
-                percent=PercentageToReduce(message.text),
+                percent=PercentageToReduce(token_len),
             ),
             context=ContextIO.UserFailed,
         )
@@ -120,7 +150,7 @@ async def CommandFindText(message: types.Message, state: FSMContext) -> None:
         return
 
     search_id = uuid.uuid4()
-    SEARCHES[search_id] = search
+    RegisterSearch(chat_id, search_id, search)
 
     await SendMessage(
         chat_id=message.chat.id,
@@ -155,6 +185,17 @@ async def CommandFindCallback(
     page: Page | None
     if callback_data.action == FindAction.Prev:
         page = await search.ScrollBackward()
+
+        if page is None:
+            await callback_query.message.edit_reply_markup(
+                reply_markup=FindKeyboard(
+                    search_id=search_id,
+                    next=search.CanScrollFurtherForward(),
+                )
+            )
+            await callback_query.answer(t(lang, "find.no_more_pages"))
+
+            return
     else:
         page = await search.ScrollForward()
 

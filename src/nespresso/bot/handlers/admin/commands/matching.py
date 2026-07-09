@@ -12,12 +12,21 @@ from nespresso.bot.lib.message.file import SendTemporaryXlsxFile
 from nespresso.bot.lib.message.i18n import GetUserLanguage, t
 from nespresso.bot.lib.message.io import PersonalMsg, SendMessage, SendMessagesToGroup
 from nespresso.core.configs.admin_store import GetAdminIds
+from nespresso.db.models.match import FeedbackResponse
 from nespresso.db.models.tg_user import TgUser
 from nespresso.db.services.user_context import GetUserContextService
-from nespresso.recsys.matching.assign import DemoMatching
+from nespresso.recsys.matching.assign import (
+    DemoMatching,
+    MatchingCooldownError,
+    MatchingInProgressError,
+)
 from nespresso.recsys.matching.schedule import RunMatching
 
 router = Router()
+# HandleFeedbackResponse lives on its OWN router, registered WITHOUT AdminFilter:
+# its buttons are DMed to ordinary matched alumni (the assigners), not admins —
+# see RegisterClientHandlers / bot/handlers/client/register.py.
+feedback_router = Router()
 
 
 class MatchingAction(str, Enum):
@@ -122,6 +131,13 @@ async def CommandMatchingRun(callback_query: types.CallbackQuery) -> None:
         await SendMessage(
             chat_id=chat_id,
             text=t(lang, "admin.matching_done", count=participants),
+        )
+    except MatchingInProgressError:
+        await SendMessage(chat_id=chat_id, text=t(lang, "admin.matching_in_progress"))
+    except MatchingCooldownError as e:
+        minutes = max(1, e.remaining_seconds // 60)
+        await SendMessage(
+            chat_id=chat_id, text=t(lang, "admin.matching_cooldown", minutes=minutes)
         )
     except Exception:
         logging.exception("MatchingPipeline failed")
@@ -238,6 +254,19 @@ async def CommandMatchingFeedback(callback_query: types.CallbackQuery) -> None:
         await SendMessage(chat_id=chat_id, text=t(lang, "admin.matching_no_rounds"))
         return
 
+    if last_round.feedback_sent_at is not None:
+        # Refuse rather than re-spam every matched user with a fresh set of
+        # feedback buttons on every repeat tap.
+        await SendMessage(
+            chat_id=chat_id,
+            text=t(
+                lang,
+                "admin.matching_feedback_already_sent",
+                when=last_round.feedback_sent_at.strftime("%Y-%m-%d %H:%M UTC"),
+            ),
+        )
+        return
+
     assignments = await ctx.GetAssignmentsByRound(round_id=last_round.id)
     if not assignments:
         await SendMessage(
@@ -288,13 +317,18 @@ async def CommandMatchingFeedback(callback_query: types.CallbackQuery) -> None:
             )
             sent += 1
 
+    await ctx.MarkFeedbackSent(round_id=last_round.id)
+
     await SendMessage(
         chat_id=chat_id,
         text=t(lang, "admin.matching_feedback_sent", count=sent),
     )
 
 
-@router.callback_query(FeedbackCallbackData.filter())
+_VALID_FEEDBACK_RESPONSES = {r.value for r in FeedbackResponse}
+
+
+@feedback_router.callback_query(FeedbackCallbackData.filter())
 async def HandleFeedbackResponse(
     callback_query: types.CallbackQuery, callback_data: FeedbackCallbackData
 ) -> None:
@@ -304,6 +338,22 @@ async def HandleFeedbackResponse(
     lang = await GetUserLanguage(chat_id)
 
     ctx = await GetUserContextService()
+
+    # assignment_id is a small, guessable sequential int and `response` is
+    # attacker-controlled callback data — never trust either blindly:
+    #   - the assignment must actually exist (else UpsertFeedback's FK insert
+    #     would crash on a nonexistent/already-cascaded assignment_id), and
+    #   - it must have been sent to the person tapping the button, or anyone
+    #     could overwrite anyone else's feedback by guessing/enumerating ids.
+    assignment = await ctx.GetAssignment(callback_data.assignment_id)
+    if (
+        assignment is None
+        or assignment.assigner_chat_id != chat_id
+        or callback_data.response not in _VALID_FEEDBACK_RESPONSES
+    ):
+        await callback_query.answer(t(lang, "matching.feedback_invalid"))
+        return
+
     await ctx.UpsertFeedback(
         assignment_id=callback_data.assignment_id,
         response=callback_data.response,

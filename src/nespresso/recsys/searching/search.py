@@ -285,9 +285,12 @@ class ScrollingSearch:
     def CanScrollFurtherBackward(self) -> bool:
         return self.index > 0
 
-    async def ScrollBackward(self) -> Page:
+    async def ScrollBackward(self) -> Page | None:
+        # Mirrors ScrollForward's "nothing more" contract (return None) instead
+        # of raising — a double-tap on Prev is a normal race (the first tap's
+        # edited keyboard hasn't reached the client yet), not an error.
         if self.index == 0:
-            raise ValueError("Can't scroll further backward.")
+            return None
 
         self.index -= 1
 
@@ -317,3 +320,21 @@ SEARCHES: TTLCache[uuid.UUID, ScrollingSearch] = TTLCache(
     maxsize=5000,
     ttl=_TIMEOUT * 60,
 )
+
+# How many live search sessions one chat_id may hold in SEARCHES at once. The
+# global cache has no per-user limit on its own, so one user searching
+# repeatedly could otherwise fill it and start evicting other users' still-live
+# sessions early.
+_MAX_SEARCHES_PER_USER = 5
+_USER_SEARCH_IDS: dict[int, list[uuid.UUID]] = {}
+
+
+def RegisterSearch(chat_id: int, search_id: uuid.UUID, search: ScrollingSearch) -> None:
+    """Track a new search under SEARCHES, evicting this user's own oldest
+    session first if they're already at the per-user cap."""
+    ids = _USER_SEARCH_IDS.setdefault(chat_id, [])
+    while len(ids) >= _MAX_SEARCHES_PER_USER:
+        oldest = ids.pop(0)
+        SEARCHES.pop(oldest, None)
+    ids.append(search_id)
+    SEARCHES[search_id] = search

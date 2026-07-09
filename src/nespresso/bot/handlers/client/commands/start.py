@@ -15,6 +15,8 @@ from aiogram.types import (
     ReplyKeyboardMarkup,
     ReplyKeyboardRemove,
 )
+from cachetools import TTLCache
+from sqlalchemy.exc import IntegrityError
 
 from nespresso.api.request import EmailLookup, ResolveNesUserByEmail
 from nespresso.bot.handlers.client.commands.about import RejectIfAboutTooLong
@@ -172,6 +174,15 @@ async def CommandStartChooseLanguage(message: types.Message, state: FSMContext) 
 
 
 _EMAIL_COOLDOWN_SECONDS = 10 * 60
+# Verification codes stop being accepted after this long, so a leaked/old code
+# (or FSM state that lingers across a bot restart) can't be replayed indefinitely.
+_CODE_TTL_SECONDS = 15 * 60
+# Minimum gap between two codes SENT to the same email, regardless of which
+# chat_id asked — keyed by email (not chat_id) so cycling through /cancel+/start,
+# or even multiple bot accounts, can't be used to email-bomb one alumnus's inbox
+# or exhaust the shared Gmail SMTP account.
+_CODE_SEND_MIN_INTERVAL_SECONDS = 60
+_last_code_sent_at: TTLCache[str, float] = TTLCache(maxsize=10000, ttl=3600)
 
 
 @router.message(StateFilter(StartStates.EmailGet), F.content_type == "text")
@@ -206,8 +217,14 @@ async def CommandStartEmailGet(message: types.Message, state: FSMContext) -> Non
 
     existing_chat_id = await ctx.GetTgChatIdBy(nes_email=email)
     if existing_chat_id is not None and existing_chat_id != chat_id:
-        is_verified = await ctx.GetTgUser(existing_chat_id, TgUser.verified)
-        if is_verified:
+        existing_user = await ctx.GetTgUser(existing_chat_id)
+        # Blocking force-unverifies a row (see block.py) — checking `verified`
+        # alone would let a blocked user undo their block just by registering a
+        # second Telegram account with the same email, so a still-blocked row
+        # must keep the email reserved exactly like a verified one does.
+        if existing_user is not None and (
+            existing_user.verified or existing_user.blocked
+        ):
             await SendMessage(
                 chat_id=chat_id,
                 text=t(lang, "start.email_taken"),
@@ -277,6 +294,18 @@ async def CommandStartEmailGet(message: types.Message, state: FSMContext) -> Non
 
     nes_id = resolution.nes_id
 
+    now = time.time()
+    last_sent = _last_code_sent_at.get(email)
+    if last_sent is not None and now - last_sent < _CODE_SEND_MIN_INTERVAL_SECONDS:
+        remaining = int(_CODE_SEND_MIN_INTERVAL_SECONDS - (now - last_sent))
+        await SendMessage(
+            chat_id=chat_id,
+            text=t(lang, "start.code_rate_limited", seconds=remaining),
+            context=ContextIO.UserFailed,
+        )
+        return
+    _last_code_sent_at[email] = now
+
     code = CreateCode()
     await SendCode(email=email, code=code)
 
@@ -285,7 +314,14 @@ async def CommandStartEmailGet(message: types.Message, state: FSMContext) -> Non
         text=t(lang, "start.sent_code"),
     )
 
-    await state.set_data({"code": code, "attempts": 0, "nes_id": nes_id})
+    await state.set_data(
+        {
+            "code": code,
+            "attempts": 0,
+            "nes_id": nes_id,
+            "expires_at": now + _CODE_TTL_SECONDS,
+        }
+    )
     await state.set_state(StartStates.EmailConfirm)
 
 
@@ -299,6 +335,17 @@ async def CommandStartEmailConfirm(message: types.Message, state: FSMContext) ->
     data = await state.get_data()
     code_actual = str(data["code"])
     code_provided = message.text.replace(" ", "")
+
+    expires_at = data.get("expires_at")
+    if expires_at is not None and time.time() > expires_at:
+        await SendMessage(
+            chat_id=chat_id,
+            text=t(lang, "start.code_expired"),
+            context=ContextIO.UserFailed,
+        )
+        await state.set_state(StartStates.EmailGet)
+        await state.set_data({})
+        return
 
     if code_actual != code_provided:
         attempts = data.get("attempts", 0) + 1
@@ -341,9 +388,27 @@ async def CommandStartEmailConfirm(message: types.Message, state: FSMContext) ->
         return
 
     ctx = await GetUserContextService()
-    await ctx.UpdateTgUser(chat_id=chat_id, column=TgUser.nes_id, value=nes_id)
-    # No terms-of-use step: a correct code completes registration outright.
-    await ctx.UpdateTgUser(chat_id=chat_id, column=TgUser.verified, value=True)
+    try:
+        await ctx.UpdateTgUser(chat_id=chat_id, column=TgUser.nes_id, value=nes_id)
+        # No terms-of-use step: a correct code completes registration outright.
+        await ctx.UpdateTgUser(chat_id=chat_id, column=TgUser.verified, value=True)
+    except IntegrityError:
+        # The DB-level unique index (tg_user.nes_id WHERE verified) caught a
+        # race: another chat_id already completed registration for this same
+        # nes_id while this one was mid-flow. Reject rather than create a second
+        # verified account bound to the same alumnus.
+        logging.info(
+            f"EmailConfirm: nes_id={nes_id} already claimed by another chat_id; "
+            f"rejecting chat_id={chat_id}"
+        )
+        await SendMessage(
+            chat_id=chat_id,
+            text=t(lang, "start.email_taken"),
+            context=ContextIO.UserFailed,
+        )
+        await state.set_state(StartStates.EmailGet)
+        await state.set_data({})
+        return
 
     await SendMessage(
         chat_id=chat_id,

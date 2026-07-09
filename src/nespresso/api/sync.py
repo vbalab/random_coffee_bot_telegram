@@ -108,6 +108,13 @@ _PROFILE_COLUMNS = (
 
 _sync_lock = asyncio.Lock()
 
+# Guards against mass-delisting on a partial/truncated feed (see the check in
+# _RunSync): skip write/delist entirely if the feed shrank by more than this
+# fraction vs. what's currently listed, but only once the directory is past
+# bootstrap size (below this, any real feed looks like a "drop" of nothing).
+_MIN_ROWS_FOR_PARTIAL_CHECK = 20
+_PARTIAL_FEED_DROP_THRESHOLD = 0.5
+
 
 @dataclass
 class SyncReport:
@@ -210,10 +217,31 @@ async def _RunSync(report: SyncReport) -> None:
         logging.warning("MyNES sync: feed produced no alumni; skipping write/delist.")
         return
 
+    ctx = await GetUserContextService()
+    current_listed_count = await ctx.CountListedNesUsers()
+    # A literally-empty feed is caught above, but a PARTIAL/truncated one (an
+    # upstream glitch that returns e.g. 50 of the usual ~3000 alumni) is not —
+    # DelistMissingNesUsers would then mass-delist everyone genuinely missing
+    # from this one bad response. Skip the whole write/delist rather than treat
+    # a suspicious drop as "these people left the directory". Guarded by a
+    # minimum current-count so this never fires while the directory is still
+    # small/bootstrapping (any real feed then looks like a "drop" of nothing).
+    if (
+        current_listed_count >= _MIN_ROWS_FOR_PARTIAL_CHECK
+        and len(by_id) < current_listed_count * (1 - _PARTIAL_FEED_DROP_THRESHOLD)
+    ):
+        logging.error(
+            f"MyNES sync: feed returned only {len(by_id)} alumni vs "
+            f"{current_listed_count} currently listed (>{_PARTIAL_FEED_DROP_THRESHOLD:.0%} "
+            "drop) — looks like a partial/truncated feed; skipping write/delist "
+            "entirely rather than mass-delisting real alumni."
+        )
+        report.error = "partial_feed_detected"
+        return
+
     now = report.started_at
     fresh_ids = list(by_id.keys())
 
-    ctx = await GetUserContextService()
     # Each user's bio (TgUser.about) is folded into the unified profile text AND
     # the change hash, so fetch it up front for every listed alumnus (a small
     # set — only registered bot users who wrote an About). Folding the bio in is

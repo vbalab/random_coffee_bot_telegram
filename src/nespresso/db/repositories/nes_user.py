@@ -100,6 +100,13 @@ class NesUserRepository:
             )
             return result.scalars().first()
 
+    async def CountListedNesUsers(self) -> int:
+        async with self.session() as session:
+            result = await session.execute(
+                select(func.count()).select_from(NesUser).where(NesUser.listed.is_(True))
+            )
+            return int(result.scalar_one())
+
     async def GetNesUserHashes(
         self, nes_ids: Sequence[int]
     ) -> dict[int, str | None]:

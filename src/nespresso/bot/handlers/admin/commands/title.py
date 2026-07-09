@@ -11,7 +11,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from nespresso.bot.handlers.admin.commands.back import BackToAdminPanelCallbackData
 from nespresso.bot.lib.hub_state import HUB_MESSAGES
 from nespresso.bot.lib.message.i18n import GetUserLanguage, t
-from nespresso.bot.lib.message.io import SendMessage
+from nespresso.bot.lib.message.io import ContextIO, SendMessage
 from nespresso.bot.lifecycle.creator import bot
 from nespresso.core.configs.title_store import GetBothTitles, SetTitle
 from nespresso.db.models.tg_user import TgUser
@@ -123,7 +123,16 @@ async def TitlePanelEditEN(
 @router.message(StateFilter(TitlePanelStates.EditEN), F.content_type == "text")
 async def TitlePanelSaveEN(message: types.Message, state: FSMContext) -> None:
     assert message.text is not None
-    SetTitle("en", message.text.strip())
+    title = message.text.strip()
+    if not title:
+        lang = await GetUserLanguage(message.chat.id)
+        await SendMessage(
+            chat_id=message.chat.id,
+            text=t(lang, "admin.title_blank"),
+            context=ContextIO.UserFailed,
+        )
+        return  # stays in EditEN so the admin can resend a real title
+    SetTitle("en", title)
     await state.clear()
     await ShowTitlePanel(message.chat.id)
 
@@ -151,6 +160,15 @@ async def TitlePanelEditRU(
 @router.message(StateFilter(TitlePanelStates.EditRU), F.content_type == "text")
 async def TitlePanelSaveRU(message: types.Message, state: FSMContext) -> None:
     assert message.text is not None
-    SetTitle("ru", message.text.strip())
+    title = message.text.strip()
+    if not title:
+        lang = await GetUserLanguage(message.chat.id)
+        await SendMessage(
+            chat_id=message.chat.id,
+            text=t(lang, "admin.title_blank"),
+            context=ContextIO.UserFailed,
+        )
+        return  # stays in EditRU so the admin can resend a real title
+    SetTitle("ru", title)
     await state.clear()
     await ShowTitlePanel(message.chat.id)

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, String, text
+from sqlalchemy import BigInteger, Boolean, DateTime, Index, String, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from nespresso.db.base import Base
@@ -8,6 +8,18 @@ from nespresso.db.base import Base
 
 class TgUser(Base):
     __tablename__ = "tg_user"
+
+    __table_args__ = (
+        # A verified alumnus should map to exactly one account. Partial (only
+        # WHERE verified) so an unverified/never-completed row never blocks a
+        # different chat_id from later claiming the same nes_id.
+        Index(
+            "ix_tg_user_nes_id_verified_uniq",
+            "nes_id",
+            unique=True,
+            postgresql_where=text("verified = true"),
+        ),
+    )
 
     # --- primary key ---
 

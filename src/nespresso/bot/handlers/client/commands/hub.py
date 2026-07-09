@@ -9,7 +9,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from nespresso.bot.handlers.admin.commands.back import BackToHubCallbackData
 from nespresso.bot.handlers.client.commands.find import FindStates
-from nespresso.bot.lib.hub_state import HUB_MESSAGES
+from nespresso.bot.lib.hub_state import HUB_LOCKS, HUB_MESSAGES
 from nespresso.bot.lib.message.i18n import GetUserLanguage, t
 from nespresso.bot.lib.message.io import SendMessage
 from nespresso.bot.lifecycle.creator import bot
@@ -66,41 +66,60 @@ def HubKeyboard(lang: str, is_admin: bool) -> InlineKeyboardMarkup:
 
 async def SendHub(chat_id: int) -> None:
     """Delete the old hub message (if any) and send a fresh one."""
-    lang = await GetUserLanguage(chat_id)
-    ctx = await GetUserContextService()
+    # Serialized per chat_id so two concurrent calls can't both act on the same
+    # "old" message and leave an orphaned duplicate hub (see HUB_LOCKS).
+    async with HUB_LOCKS[chat_id]:
+        lang = await GetUserLanguage(chat_id)
+        ctx = await GetUserContextService()
 
-    # Prefer in-memory cache; fall back to DB (survives bot restarts)
-    old_id = HUB_MESSAGES.get(chat_id)
-    if old_id is None:
-        old_id = await ctx.GetTgUser(chat_id, TgUser.panel_message_id)
+        # Prefer in-memory cache; fall back to DB (survives bot restarts)
+        old_id = HUB_MESSAGES.get(chat_id)
+        if old_id is None:
+            old_id = await ctx.GetTgUser(chat_id, TgUser.panel_message_id)
 
-    if old_id is not None:
-        try:
-            await bot.delete_message(chat_id=chat_id, message_id=old_id)
-        except TelegramBadRequest as e:
-            # Expected & harmless: the old hub is already gone, or older than
-            # Telegram's 48h delete window. One clean line, no traceback.
-            logging.warning(
-                f"Old hub message not deleted (chat_id={chat_id} "
-                f"message_id={old_id}): {e.message}"
-            )
-        except Exception:
-            logging.warning(
-                f"Failed to delete old hub message for chat_id={chat_id} message_id={old_id}",
-                exc_info=True,
-            )
+        if old_id is not None:
+            try:
+                await bot.delete_message(chat_id=chat_id, message_id=old_id)
+            except TelegramBadRequest as e:
+                # Expected & harmless: the old hub is already gone, or older than
+                # Telegram's 48h delete window. One clean line, no traceback.
+                logging.warning(
+                    f"Old hub message not deleted (chat_id={chat_id} "
+                    f"message_id={old_id}): {e.message}"
+                )
+            except Exception:
+                logging.warning(
+                    f"Failed to delete old hub message for chat_id={chat_id} message_id={old_id}",
+                    exc_info=True,
+                )
 
-    is_admin = await ctx.GetTgUser(chat_id, TgUser.is_admin) or False
-    msg = await SendMessage(
-        chat_id=chat_id,
-        text=GetTitle(lang),
-        reply_markup=HubKeyboard(lang, is_admin),
-    )
-    if msg is not None:
-        HUB_MESSAGES[chat_id] = msg.message_id
-        await ctx.UpdateTgUser(
-            chat_id=chat_id, column=TgUser.panel_message_id, value=msg.message_id
+        is_admin = await ctx.GetTgUser(chat_id, TgUser.is_admin) or False
+        msg = await SendMessage(
+            chat_id=chat_id,
+            text=GetTitle(lang),
+            reply_markup=HubKeyboard(lang, is_admin),
         )
+        if msg is not None:
+            HUB_MESSAGES[chat_id] = msg.message_id
+            await ctx.UpdateTgUser(
+                chat_id=chat_id, column=TgUser.panel_message_id, value=msg.message_id
+            )
+
+
+async def _IsStalePanel(chat_id: int, message_id: int) -> bool:
+    """
+    True if `message_id` is NOT the panel currently tracked for `chat_id`. A
+    user can still have an old hub message sitting in their chat history (e.g.
+    from before a restart, or several navigations back); tapping its buttons
+    should be a clean no-op rather than silently acting on/deleting a message
+    that isn't the one HUB_MESSAGES/panel_message_id actually points at
+    (which would orphan whichever message WAS current).
+    """
+    tracked = HUB_MESSAGES.get(chat_id)
+    if tracked is None:
+        ctx = await GetUserContextService()
+        tracked = await ctx.GetTgUser(chat_id, TgUser.panel_message_id)
+    return tracked is not None and tracked != message_id
 
 
 @router.callback_query(HubCallbackData.filter(F.action == HubAction.Find))
@@ -108,9 +127,13 @@ async def HubFindCallback(
     callback_query: types.CallbackQuery, state: FSMContext
 ) -> None:
     assert isinstance(callback_query.message, types.Message)
+    chat_id = callback_query.from_user.id
+    if await _IsStalePanel(chat_id, callback_query.message.message_id):
+        lang = await GetUserLanguage(chat_id)
+        await callback_query.answer(t(lang, "common.button_outdated"), show_alert=True)
+        return
     await callback_query.answer()
 
-    chat_id = callback_query.from_user.id
     lang = await GetUserLanguage(chat_id)
 
     # Delete the hub message so it doesn't remain clickable during the search flow
@@ -142,9 +165,13 @@ async def HubFindCallback(
 @router.callback_query(HubCallbackData.filter(F.action == HubAction.Admin))
 async def HubAdminCallback(callback_query: types.CallbackQuery) -> None:
     assert isinstance(callback_query.message, types.Message)
+    chat_id = callback_query.message.chat.id
+    if await _IsStalePanel(chat_id, callback_query.message.message_id):
+        lang = await GetUserLanguage(chat_id)
+        await callback_query.answer(t(lang, "common.button_outdated"), show_alert=True)
+        return
     await callback_query.answer()
 
-    chat_id = callback_query.message.chat.id
     ctx = await GetUserContextService()
     is_admin = await ctx.GetTgUser(chat_id, TgUser.is_admin) or False
     if not is_admin:
@@ -167,10 +194,13 @@ async def HubAdminCallback(callback_query: types.CallbackQuery) -> None:
 @router.callback_query(HubCallbackData.filter(F.action == HubAction.Settings))
 async def HubSettingsCallback(callback_query: types.CallbackQuery) -> None:
     assert isinstance(callback_query.message, types.Message)
-    await callback_query.answer()
-
     chat_id = callback_query.from_user.id
     lang = await GetUserLanguage(chat_id)
+    if await _IsStalePanel(chat_id, callback_query.message.message_id):
+        await callback_query.answer(t(lang, "common.button_outdated"), show_alert=True)
+        return
+    await callback_query.answer()
+
     ctx = await GetUserContextService()
     matching_paused = await ctx.GetTgUser(chat_id, TgUser.matching_paused) or False
 
@@ -191,10 +221,13 @@ async def HubSettingsCallback(callback_query: types.CallbackQuery) -> None:
 @router.callback_query(HubCallbackData.filter(F.action == HubAction.About))
 async def HubAboutCallback(callback_query: types.CallbackQuery) -> None:
     assert isinstance(callback_query.message, types.Message)
-    await callback_query.answer()
-
     chat_id = callback_query.from_user.id
     lang = await GetUserLanguage(chat_id)
+    if await _IsStalePanel(chat_id, callback_query.message.message_id):
+        await callback_query.answer(t(lang, "common.button_outdated"), show_alert=True)
+        return
+    await callback_query.answer()
+
     ctx = await GetUserContextService()
     about = await ctx.GetTgUser(chat_id, TgUser.about)
 
@@ -213,10 +246,14 @@ async def HubAboutCallback(callback_query: types.CallbackQuery) -> None:
 @router.callback_query(BackToHubCallbackData.filter())
 async def HubBack(callback_query: types.CallbackQuery, state: FSMContext) -> None:
     assert isinstance(callback_query.message, types.Message)
+    chat_id = callback_query.message.chat.id
+    if await _IsStalePanel(chat_id, callback_query.message.message_id):
+        lang = await GetUserLanguage(chat_id)
+        await callback_query.answer(t(lang, "common.button_outdated"), show_alert=True)
+        return
     await callback_query.answer()
     await state.clear()
 
-    chat_id = callback_query.message.chat.id
     lang = await GetUserLanguage(chat_id)
     ctx = await GetUserContextService()
     is_admin = await ctx.GetTgUser(chat_id, TgUser.is_admin) or False

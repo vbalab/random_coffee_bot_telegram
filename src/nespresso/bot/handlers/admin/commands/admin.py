@@ -22,6 +22,7 @@ from nespresso.bot.handlers.admin.commands.matching import (
 from nespresso.bot.handlers.admin.commands.mynes import ShowMyNesPanel
 from nespresso.bot.handlers.admin.commands.statistics import ShowStatisticsPanel
 from nespresso.bot.handlers.admin.commands.title import ShowTitlePanel
+from nespresso.bot.lib.chat.username import ResolveChatIdByUsername
 from nespresso.bot.lib.hub_state import HUB_MESSAGES
 from nespresso.bot.lib.message.file import SendTemporaryFileFromText, ToJSONText
 from nespresso.bot.lib.message.i18n import GetUserLanguage, t
@@ -268,10 +269,10 @@ async def PanelMessagesArgs(message: types.Message, state: FSMContext) -> None:
         return
 
     tg_username, limit_str = parts
+    chat_id = await ResolveChatIdByUsername(tg_username.replace("@", ""))
     ctx = await GetUserContextService()
-    chat_id = await ctx.GetTgChatIdBy(tg_username=tg_username.replace("@", ""))
 
-    if chat_id is None:
+    if chat_id is None or not await ctx.CheckTgUserExists(chat_id):
         await SendMessage(
             chat_id=message.chat.id,
             text=t(lang, "admin.user_not_found"),
@@ -320,10 +321,10 @@ async def PanelSendUsername(message: types.Message, state: FSMContext) -> None:
 
     lang = await GetUserLanguage(message.chat.id)
     username = message.text.replace("@", "").strip()
+    chat_id = await ResolveChatIdByUsername(username)
     ctx = await GetUserContextService()
-    chat_id = await ctx.GetTgChatIdBy(tg_username=username)
 
-    if chat_id is None:
+    if chat_id is None or not await ctx.CheckTgUserExists(chat_id):
         await SendMessage(
             chat_id=message.chat.id,
             text=t(lang, "admin.user_not_found"),

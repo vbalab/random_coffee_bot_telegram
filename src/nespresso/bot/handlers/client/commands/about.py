@@ -1,3 +1,4 @@
+import html
 import logging
 from enum import Enum
 
@@ -24,16 +25,24 @@ router = Router()
 # panel (`AboutStates.WriteAbout`) — via `RejectIfAboutTooLong`.
 MAX_ABOUT_CHARS = 1500
 
+# `about` is HTML-escaped before being woven into another user's profile card
+# (see Profile.DescribeProfile, sent with parse_mode="HTML") — `<`, `>`, `&`
+# etc. each expand to several characters, so a bio within MAX_ABOUT_CHARS raw
+# could still balloon past Telegram's 4096-char message cap once escaped,
+# silently failing to send that profile card to whoever looked this person up.
+_MAX_ABOUT_ESCAPED_CHARS = 3000
+
 
 async def RejectIfAboutTooLong(message: types.Message, lang: str) -> bool:
     """
-    If the submitted bio exceeds `MAX_ABOUT_CHARS`, reply with the user's current
+    If the submitted bio exceeds `MAX_ABOUT_CHARS` (raw) or would exceed the
+    escaped-length budget once HTML-escaped, reply with the user's current
     character count and the limit and return True; the caller then returns
     WITHOUT clearing FSM state, so the user stays in the bio-writing step and can
-    simply send a shorter version. Returns False when the bio is within the cap.
+    simply send a shorter version. Returns False when the bio is within both caps.
     """
     text = message.text or ""
-    if len(text) <= MAX_ABOUT_CHARS:
+    if len(text) <= MAX_ABOUT_CHARS and len(html.escape(text)) <= _MAX_ABOUT_ESCAPED_CHARS:
         return False
     await SendMessage(
         chat_id=message.chat.id,

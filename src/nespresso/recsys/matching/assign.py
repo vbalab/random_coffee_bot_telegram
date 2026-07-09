@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import random
+import time
 
 from aiolimiter import AsyncLimiter
 from sqlalchemy import select
@@ -17,6 +18,28 @@ from nespresso.recsys.profile import Profile
 
 _MIN_USERS_FOR_MATCHING = 2
 _MIN_USERS_FOR_SECOND_ROUND = 3
+
+# Serializes "Run Matching Now" so a double-tap or two admins racing each other
+# can't both pass the eligibility read and each create their own independent
+# round, silently sending everyone two conflicting sets of assignments.
+_matching_lock = asyncio.Lock()
+
+# A round is manual/occasional by design; refuse a new one this soon after the
+# last, so repeated taps (or repeated admin action) can't blast the whole
+# alumni base with matching DMs back-to-back.
+_MIN_SECONDS_BETWEEN_ROUNDS = 10 * 60
+
+
+class MatchingInProgressError(RuntimeError):
+    """Another matching round is currently being created."""
+
+
+class MatchingCooldownError(RuntimeError):
+    """A round was created too recently; carries the remaining wait in seconds."""
+
+    def __init__(self, remaining_seconds: int):
+        self.remaining_seconds = remaining_seconds
+        super().__init__(f"Matching on cooldown for {remaining_seconds}s more")
 
 
 def _CreateDerangement(
@@ -107,27 +130,47 @@ async def CreateMatching(triggered_by: int) -> dict[int, list[int]]:
     """
     Fetches eligible users, runs asymmetric matching, saves to DB.
     Returns dict[assigner_chat_id -> list[assigned_chat_ids]].
+
+    Guarded against a double-tap / two-admins-at-once race two ways: a hard
+    concurrency lock (raises MatchingInProgressError if a round is already being
+    created) and a cooldown since the last round (raises MatchingCooldownError).
     """
-    ctx = await GetUserContextService()
-    all_users = await _EligibleChatIds(ctx)
-    excluded = await ctx.GetRecentExcludedPairs(last_n_rounds=2)
-    assignments_map = MatchUsers(all_users, excluded)
+    if _matching_lock.locked():
+        raise MatchingInProgressError()
 
-    # Flatten to list of (assigner, assigned) tuples
-    flat: list[tuple[int, int]] = [
-        (assigner, assigned)
-        for assigner, assigned_list in assignments_map.items()
-        for assigned in assigned_list
-    ]
+    async with _matching_lock:
+        ctx = await GetUserContextService()
 
-    if flat:
-        round_ = await ctx.CreateRound(triggered_by=triggered_by)
-        await ctx.CreateAssignments(round_id=round_.id, assignments=flat)
-        logging.info(
-            f"MatchingRound id={round_.id}: {len(flat)} assignments for {len(all_users)} users"
-        )
+        last_round = await ctx.GetLastRound()
+        if last_round is not None:
+            elapsed = time.time() - last_round.created_at.timestamp()
+            if elapsed < _MIN_SECONDS_BETWEEN_ROUNDS:
+                raise MatchingCooldownError(
+                    remaining_seconds=int(_MIN_SECONDS_BETWEEN_ROUNDS - elapsed)
+                )
 
-    return assignments_map
+        all_users = await _EligibleChatIds(ctx)
+        excluded = await ctx.GetRecentExcludedPairs(last_n_rounds=2)
+        # CPU-bound (rejection-sampling up to 2000 shuffles); off the event loop
+        # so it can't stall every other user's request while it runs.
+        assignments_map = await asyncio.to_thread(MatchUsers, all_users, excluded)
+
+        # Flatten to list of (assigner, assigned) tuples
+        flat: list[tuple[int, int]] = [
+            (assigner, assigned)
+            for assigner, assigned_list in assignments_map.items()
+            for assigned in assigned_list
+        ]
+
+        if flat:
+            round_, _assignments = await ctx.CreateRoundWithAssignments(
+                triggered_by=triggered_by, assignments=flat
+            )
+            logging.info(
+                f"MatchingRound id={round_.id}: {len(flat)} assignments for {len(all_users)} users"
+            )
+
+        return assignments_map
 
 
 async def DemoMatching() -> dict[int, list[int]]:
@@ -139,7 +182,7 @@ async def DemoMatching() -> dict[int, list[int]]:
     ctx = await GetUserContextService()
     all_users = await _EligibleChatIds(ctx)
     excluded = await ctx.GetRecentExcludedPairs(last_n_rounds=2)
-    return MatchUsers(all_users, excluded)
+    return await asyncio.to_thread(MatchUsers, all_users, excluded)
 
 
 async def SendMatchingInfo(assignments_map: dict[int, list[int]]) -> None:

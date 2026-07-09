@@ -31,6 +31,7 @@ class UserService:
         self.GetNesUser = self.nes_user_repo.GetNesUser
         self.GetNesUserByEmail = self.nes_user_repo.GetNesUserByEmail
         self.GetNesUserHashes = self.nes_user_repo.GetNesUserHashes
+        self.CountListedNesUsers = self.nes_user_repo.CountListedNesUsers
 
         # --- Update ---
         # - Tg -
