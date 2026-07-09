@@ -1,0 +1,612 @@
+{
+ "queries": [
+  {
+   "id": "semantic-consultant-to-founder",
+   "text": "бывший консультант из BCG или McKinsey, который запустил свой стартап",
+   "intent": "semantic-career-transition",
+   "lang": "ru",
+   "rationale": "Relevant: alumni with a strategy-consulting past (McKinsey/BCG/Bain/Oliver Wyman/Kearney/Accenture) who LATER founded or co-founded their own company (Founder/CEO of a venture, not a consulting title); rank the clearest consultant->founder trajectories first. Small handful (~8-20 core).",
+   "family": "semantic"
+  },
+  {
+   "id": "semantic-trader-to-pm",
+   "text": "начинал трейдером, а теперь управляет портфелем",
+   "intent": "semantic-career-transition",
+   "lang": "ru",
+   "rationale": "Relevant: alumni whose earlier role was a trader (трейдер / trader) and who now hold a portfolio-management role (Portfolio Manager / управляющий портфелем / asset management); the trading->PM progression, not just anyone in markets, is the discriminator.",
+   "family": "semantic"
+  },
+  {
+   "id": "semantic-banker-to-vc",
+   "text": "инвестбанкир, который ушёл в венчур",
+   "intent": "semantic-career-transition",
+   "lang": "ru",
+   "rationale": "Relevant: alumni with investment-banking experience (ВТБ Капитал, Goldman, Citi, Ренессанс, ECM/M&A analyst/associate) who then moved into venture capital / venture investing (venture fund, general or investment partner, венчурные инвестиции); the IB->VC switch is required.",
+   "family": "semantic"
+  },
+  {
+   "id": "semantic-economist-to-datascience",
+   "text": "economist who retrained as a data scientist",
+   "intent": "semantic-career-transition",
+   "lang": "en",
+   "rationale": "Relevant: alumni who worked as an economist (Economist / экономист, often at a bank, central bank or research institute) and LATER became a Data Scientist / ML engineer in industry; the economist->DS career switch is the discriminator (~12-14 core profiles).",
+   "family": "semantic"
+  },
+  {
+   "id": "semantic-bank-to-bigtech",
+   "text": "ушёл из банка в бигтех",
+   "intent": "semantic-career-transition",
+   "lang": "ru",
+   "rationale": "Relevant: alumni who worked at a bank (Сбер, ВТБ, Альфа, Тинькофф, Райффайзен etc.) and subsequently at a big-tech company (Яндекс, Ozon, Avito, Google, VK, Uber, Amazon); rank the clearest bank->tech moves first.",
+   "family": "semantic"
+  },
+  {
+   "id": "semantic-cbr-policy-commentator",
+   "text": "эксперт, который может прокомментировать политику ЦБ",
+   "intent": "semantic-advisor",
+   "lang": "ru",
+   "rationale": "Relevant: senior economists / researchers with Central Bank of Russia monetary-policy substance (Банк России, аналитика ЦБ, макроэкономика, денежно-кредитная политика) who could authoritatively comment on rates/inflation policy; seniority (deputy chair, department heads, lead/chief economists) ranks first over junior ЦБ staff.",
+   "family": "semantic"
+  },
+  {
+   "id": "semantic-ipo-advisor",
+   "text": "кто может помочь с выходом компании на IPO",
+   "intent": "semantic-advisor",
+   "lang": "ru",
+   "rationale": "Relevant: alumni with equity-capital-markets / IPO experience (Размещение ценных бумаг, ECM, equity origination in investment banking, plus M&A) who could advise a company going public; ECM/IPO substance ranks above generic corporate-finance profiles.",
+   "family": "semantic"
+  },
+  {
+   "id": "semantic-ma-sellside-advisor",
+   "text": "нужен человек, который поможет продать бизнес и провести сделку M&A",
+   "intent": "semantic-advisor",
+   "lang": "ru",
+   "rationale": "Relevant: alumni with mergers-and-acquisitions / sell-side deal experience (Слияния и поглощения, M&A banker/associate, investment banking deal execution) who could advise on selling a company and structuring the transaction.",
+   "family": "semantic"
+  },
+  {
+   "id": "semantic-asia-market-advisor",
+   "text": "кто поможет вывести бизнес на азиатские рынки",
+   "intent": "semantic-advisor",
+   "lang": "ru",
+   "rationale": "Relevant: alumni with genuine Asia experience (country_expertise Азия, work in China/Singapore/Hong Kong, Asia-focused business development, strategy or investment) who could advise on entering Asian markets; real Asia footprint required, not a passing mention.",
+   "family": "semantic"
+  },
+  {
+   "id": "semantic-intl-org-economist",
+   "text": "выпускник, работающий экономистом в МВФ или Всемирном банке",
+   "intent": "semantic-advisor",
+   "lang": "mix",
+   "rationale": "Relevant: alumni employed as economists/analysts at an international financial organization — IMF / МВФ, World Bank / Всемирный банк, or EBRD / ЕБРР. Only a small handful of profiles (~6) name these employers, so the gold set is tiny and precision-ranking the real matches to the top is the whole test.",
+   "family": "semantic"
+  },
+  {
+   "id": "semantic-ai-product-founder",
+   "text": "founder building a product on top of machine learning",
+   "intent": "semantic-founder",
+   "lang": "en",
+   "rationale": "Relevant: alumni who founded/co-founded a company AND have machine-learning/AI substance (ML Engineer, Data Scientist, AI startup); BOTH the founder role and the ML-product angle must be present, not one or the other (~9 core profiles).",
+   "family": "semantic"
+  },
+  {
+   "id": "semantic-fintech-founder",
+   "text": "основатель финтех-стартапа",
+   "intent": "semantic-founder",
+   "lang": "ru",
+   "rationale": "Relevant: alumni who founded/co-founded a fintech company (payments, digital banking, crypto-finance, financial-services startup — e.g. JetLend, Axevil Capital, Payhamster, Offset8); the founder role at a financial-technology venture is the signal (~7 core profiles).",
+   "family": "semantic"
+  },
+  {
+   "id": "semantic-edtech-founder",
+   "text": "кто-то, кто запустил образовательный стартап",
+   "intent": "semantic-founder",
+   "lang": "ru",
+   "rationale": "Relevant: alumni who founded/co-founded an education venture or school (edtech, online school, tutoring/educational project, Skyeng-type); founder/co-founder role at an education-focused company is required (~7-11 core profiles).",
+   "family": "semantic"
+  },
+  {
+   "id": "semantic-quant-to-crypto",
+   "text": "квант, который ушёл в крипту",
+   "intent": "semantic-quant-trading",
+   "lang": "ru",
+   "rationale": "Relevant: alumni with a quantitative-research/trading background (quant researcher/developer, algotrading) who moved into crypto/blockchain (crypto fund, DeFi, digital assets, Head of DeFi); the quant->crypto pivot is required (~8 core profiles).",
+   "family": "semantic"
+  },
+  {
+   "id": "semantic-hedgefund-algo-trader",
+   "text": "алготрейдер из хедж-фонда",
+   "intent": "semantic-quant-trading",
+   "lang": "ru",
+   "rationale": "Relevant: alumni doing algorithmic/quantitative trading at a hedge fund or prop-trading firm (WorldQuant, Citadel, Pinely, XTX Markets, Teza, алготрейдинг, quantitative researcher at a fund); systematic-trading-at-a-fund substance is the signal (~10 core profiles).",
+   "family": "semantic"
+  },
+  {
+   "id": "semantic-mipt-quant",
+   "text": "физтех, ушедший в quant finance",
+   "intent": "semantic-quant-trading",
+   "lang": "mix",
+   "rationale": "Relevant: alumni who studied at MIPT / Физтех (МФТИ pre-NES education) AND now work in quantitative finance (quant researcher/analyst, algotrading, hedge fund, strat at a bank); the physics-school->quant-finance path is the discriminator (~47 core out of the ~400 MIPT alumni).",
+   "family": "semantic"
+  },
+  {
+   "id": "semantic-commodities-trader",
+   "text": "трейдер по сырьевым товарам, commodities",
+   "intent": "semantic-quant-trading",
+   "lang": "mix",
+   "rationale": "Relevant: alumni trading physical or financial commodities/energy (commodity/energy trader, FX & commodities, oil-gas trading desk, grains/cross-commodity quant); commodity-trading focus is required, not equities or generic finance (~24 core profiles).",
+   "family": "semantic"
+  },
+  {
+   "id": "semantic-em-macro-strategist",
+   "text": "макростратег по развивающимся рынкам",
+   "intent": "semantic-role",
+   "lang": "mix",
+   "rationale": "Relevant: alumni who are macro economists/strategists covering emerging markets (country_expertise Emerging markets, macro research/strategy, CIS/EM economics, sell-side EM strategy); EM-focused macro analysis is the discriminator, not any economist.",
+   "family": "semantic"
+  },
+  {
+   "id": "semantic-sellside-equity-research",
+   "text": "sell-side аналитик по рынку акций",
+   "intent": "semantic-role",
+   "lang": "mix",
+   "rationale": "Relevant: alumni working as sell-side equity research analysts (Equity Research Analyst / аналитик по акциям at a bank or broker covering stocks, professional_expertise 'По акциям'); equity-research coverage is the signal, NOT buy-side portfolio managers or generic analysts (~38 core profiles).",
+   "family": "semantic"
+  },
+  {
+   "id": "semantic-ml-professor",
+   "text": "professor doing machine learning research",
+   "intent": "semantic-role",
+   "lang": "en",
+   "rationale": "Relevant: alumni in academic positions (assistant/associate professor, lecturer, researcher) whose work involves machine learning / statistics / data science; academic ML/quant research is required, not industry-only DS (~14 core profiles).",
+   "family": "semantic"
+  },
+  {
+   "id": "semantic-quant-risk-modeler",
+   "text": "риск-менеджер, который строит модели кредитного риска",
+   "intent": "semantic-role",
+   "lang": "ru",
+   "rationale": "Relevant: alumni in risk management who BUILD or VALIDATE quantitative risk models (credit-risk modeling, model validation, scoring, quant risk at banks/fintech); model-building substance beyond generic operational risk is required (~21 core profiles).",
+   "family": "semantic"
+  },
+  {
+   "id": "semantic-relocated-bigtech",
+   "text": "выпускник, который уехал работать в западную бигтех-компанию",
+   "intent": "semantic-role",
+   "lang": "ru",
+   "rationale": "Relevant: alumni who relocated abroad and currently work at a Western big-tech major (Google, Amazon, Microsoft, Meta, Booking, Revolut, Zalando); a current role at a foreign tech company is the signal, ranking present roles above old internships (~57 core, out of ~97 who ever worked at such firms).",
+   "family": "semantic"
+  },
+  {
+   "id": "struct-mckinsey",
+   "text": "кто работал в McKinsey",
+   "intent": "structured-employer",
+   "lang": "ru",
+   "rationale": "Relevant = profile with McKinsey & Company in main_work or additional_work (~92 alumni); rank current/senior McKinsey people highest.",
+   "family": "structured"
+  },
+  {
+   "id": "struct-goldman",
+   "text": "Goldman Sachs",
+   "intent": "structured-employer",
+   "lang": "en",
+   "rationale": "Relevant = worked at Goldman Sachs (~28 alumni); a specific investment-bank employer where ranking the true GS people above generic 'analyst' noise matters.",
+   "family": "structured"
+  },
+  {
+   "id": "struct-worldquant",
+   "text": "работал в WorldQuant",
+   "intent": "structured-employer",
+   "lang": "ru",
+   "rationale": "Relevant = employed at WorldQuant (~23 alumni), a quant hedge fund; small discriminative set where the exact-employer match is what counts.",
+   "family": "structured"
+  },
+  {
+   "id": "struct-rencap",
+   "text": "Ренессанс Капитал",
+   "intent": "structured-employer",
+   "lang": "ru",
+   "rationale": "Relevant = worked at Ренессанс Капитал / Renaissance Capital (~35 alumni); an investment bank, rank actual employees above lookalike 'капитал' firms.",
+   "family": "structured"
+  },
+  {
+   "id": "struct-avito",
+   "text": "работает в Avito",
+   "intent": "structured-employer",
+   "lang": "mix",
+   "rationale": "Relevant = current or past Avito employee (~44 alumni); 'работает' implies preferring current-role Avito profiles at the top.",
+   "family": "structured"
+  },
+  {
+   "id": "struct-tbank",
+   "text": "Тинькофф",
+   "intent": "structured-employer",
+   "lang": "ru",
+   "rationale": "Relevant = worked at Тинькофф / Т-Банк / TCS (~105 alumni); rank clear T-Bank employees above generic bank profiles.",
+   "family": "structured"
+  },
+  {
+   "id": "struct-gazprombank",
+   "text": "выпускники из Газпромбанка",
+   "intent": "structured-employer",
+   "lang": "ru",
+   "rationale": "Relevant = employed at Газпромбанк (~74 alumni); must distinguish Газпромбанк from unrelated Газпром/other banks.",
+   "family": "structured"
+  },
+  {
+   "id": "struct-deutschebank",
+   "text": "Deutsche Bank",
+   "intent": "structured-employer",
+   "lang": "en",
+   "rationale": "Relevant = worked at Deutsche Bank AG (~61 alumni); rank true DB people above other German/investment banks.",
+   "family": "structured"
+  },
+  {
+   "id": "struct-cbr",
+   "text": "работал в Центробанке",
+   "intent": "structured-employer",
+   "lang": "ru",
+   "rationale": "Relevant = employed at Центральный банк РФ / Bank of Russia (~68 alumni); rank CBR staff above commercial-bank profiles (esp. Сбербанк, which must NOT match).",
+   "family": "structured"
+  },
+  {
+   "id": "struct-bcg",
+   "text": "Boston Consulting Group",
+   "intent": "structured-employer",
+   "lang": "en",
+   "rationale": "Relevant = worked at BCG (~58 alumni); a specific MBB strategy firm, rank true BCG consultants above other consulting.",
+   "family": "structured"
+  },
+  {
+   "id": "struct-trader",
+   "text": "трейдеры",
+   "intent": "structured-role",
+   "lang": "ru",
+   "rationale": "Relevant = job position is a trader (trader/трейдер, ~102 alumni); rank explicit trading roles above generic finance analysts.",
+   "family": "structured"
+  },
+  {
+   "id": "struct-pm",
+   "text": "продакт-менеджеры",
+   "intent": "structured-role",
+   "lang": "ru",
+   "rationale": "Relevant = product manager / продакт role (~62 alumni); rank explicit product roles above project managers and generic managers.",
+   "family": "structured"
+  },
+  {
+   "id": "struct-cfo",
+   "text": "финансовые директора",
+   "intent": "structured-role",
+   "lang": "ru",
+   "rationale": "Relevant = CFO / финансовый директор position (~46 alumni); rank the actual finance-director title above generic finance analysts.",
+   "family": "structured"
+  },
+  {
+   "id": "struct-founder",
+   "text": "основатели стартапов",
+   "intent": "structured-role",
+   "lang": "ru",
+   "rationale": "Relevant = founder / co-founder / основатель title (~107 alumni); rank explicit founder roles above ordinary employees.",
+   "family": "structured"
+  },
+  {
+   "id": "struct-portfolio",
+   "text": "portfolio managers",
+   "intent": "structured-role",
+   "lang": "en",
+   "rationale": "Relevant = portfolio manager / управляющий портфелем role (~38 alumni); rank explicit PM-of-assets titles above generic asset-management staff.",
+   "family": "structured"
+  },
+  {
+   "id": "struct-inv-analyst",
+   "text": "инвестиционные аналитики",
+   "intent": "structured-role",
+   "lang": "ru",
+   "rationale": "Relevant = investment analyst / инвестиционный аналитик role (~55 alumni); rank explicitly investment-focused analysts above plain analysts.",
+   "family": "structured"
+  },
+  {
+   "id": "struct-pm-moscow",
+   "text": "продакт-менеджеры в Москве",
+   "intent": "structured-role-city",
+   "lang": "ru",
+   "rationale": "Relevant = product manager whose residence city is Moscow (~37 alumni); both the role and the Moscow location must match.",
+   "family": "structured"
+  },
+  {
+   "id": "struct-ib-london",
+   "text": "инвестбанкиры в Лондоне",
+   "intent": "structured-role-city",
+   "lang": "ru",
+   "rationale": "Relevant = investment-banking role (associate/VP/analyst at an IB) residing in London (~34-49); needs both London residence and a banking role.",
+   "family": "structured"
+  },
+  {
+   "id": "struct-ds-moscow",
+   "text": "data scientists в Москве",
+   "intent": "structured-role-city",
+   "lang": "mix",
+   "rationale": "Relevant = data scientist based in Moscow (~41-51 alumni); rank Moscow-resident DS profiles above out-of-city ones.",
+   "family": "structured"
+  },
+  {
+   "id": "struct-oilgas",
+   "text": "нефтегаз",
+   "intent": "structured-industry",
+   "lang": "ru",
+   "rationale": "Relevant = works in oil & gas / топливно-энергетическое industry (~141 alumni, e.g. Роснефть, СИБУР, ЕвроХим); rank energy-sector profiles above generic finance.",
+   "family": "structured"
+  },
+  {
+   "id": "struct-hedgefund",
+   "text": "кто работает в хедж-фондах",
+   "intent": "structured-industry",
+   "lang": "ru",
+   "rationale": "Relevant = industry is hedge fund / хедж-фонд (~40-44 alumni, e.g. WorldQuant); rank true hedge-fund roles above general asset management.",
+   "family": "structured"
+  },
+  {
+   "id": "struct-venture",
+   "text": "венчурные фонды",
+   "intent": "structured-industry",
+   "lang": "ru",
+   "rationale": "Relevant = works at a venture capital fund / венчурный фонд (~43-56 alumni); rank VC-industry profiles above generic investment roles.",
+   "family": "structured"
+  },
+  {
+   "id": "hobbyedu-alpinism",
+   "text": "кто увлекается альпинизмом",
+   "intent": "hobby_edu",
+   "lang": "ru",
+   "rationale": "Relevant: hobbies field lists альпинизм, скалолазание, горный туризм or хайкинг (mountaineering/climbing enthusiasts, ~48 profiles); plain горные лыжи/сноуборд alone is not enough.",
+   "family": "hobby_edu"
+  },
+  {
+   "id": "hobbyedu-poker",
+   "text": "любители покера",
+   "intent": "hobby_edu",
+   "lang": "ru",
+   "rationale": "Relevant: hobbies include покер / poker (~20 profiles); other card or board games count only if poker is explicitly named.",
+   "family": "hobby_edu"
+  },
+  {
+   "id": "hobbyedu-sailing",
+   "text": "парусный спорт и яхтинг",
+   "intent": "hobby_edu",
+   "lang": "ru",
+   "rationale": "Relevant: hobbies list парусный спорт, яхтинг or sailing (sailing enthusiasts, ~17 profiles).",
+   "family": "hobby_edu"
+  },
+  {
+   "id": "hobbyedu-triathlon",
+   "text": "триатлеты среди выпускников",
+   "intent": "hobby_edu",
+   "lang": "ru",
+   "rationale": "Relevant: hobbies mention триатлон (triathletes, ~8 profiles); a bare бег or плавание alone does not qualify.",
+   "family": "hobby_edu"
+  },
+  {
+   "id": "hobbyedu-diving",
+   "text": "кто занимается дайвингом",
+   "intent": "hobby_edu",
+   "lang": "ru",
+   "rationale": "Relevant: hobbies include дайвинг / подводное плавание (scuba diving, ~14 profiles).",
+   "family": "hobby_edu"
+  },
+  {
+   "id": "hobbyedu-esports",
+   "text": "alumni into esports and video games",
+   "intent": "hobby_edu",
+   "lang": "en",
+   "rationale": "Relevant: hobbies list киберспорт, видеоигры or компьютерные игры (gaming/esports, ~34 profiles); generic board games excluded.",
+   "family": "hobby_edu"
+  },
+  {
+   "id": "hobbyedu-golf",
+   "text": "who plays golf",
+   "intent": "hobby_edu",
+   "lang": "en",
+   "rationale": "Relevant: hobbies field explicitly includes гольф / golf (~5 profiles); a tiny set where ranking those few to the top is the test.",
+   "family": "hobby_edu"
+  },
+  {
+   "id": "hobbyedu-poetry",
+   "text": "кто увлекается поэзией",
+   "intent": "hobby_edu",
+   "lang": "ru",
+   "rationale": "Relevant: hobbies mention поэзия or writing стихи (poetry, ~17 profiles); prose reading alone does not count.",
+   "family": "hobby_edu"
+  },
+  {
+   "id": "hobbyedu-motorsport",
+   "text": "автоспорт, картинг и Formula 1",
+   "intent": "hobby_edu",
+   "lang": "mix",
+   "rationale": "Relevant: hobbies list автоспорт, картинг, формула 1, гонки or мотоциклы (motorsport fans, ~30 profiles).",
+   "family": "hobby_edu"
+  },
+  {
+   "id": "hobbyedu-mifi",
+   "text": "выпускники МИФИ",
+   "intent": "hobby_edu",
+   "lang": "ru",
+   "rationale": "Relevant: pre-NES university is НИЯУ МИФИ / Национальный исследовательский ядерный университет «МИФИ» (~48 profiles).",
+   "family": "hobby_edu"
+  },
+  {
+   "id": "hobbyedu-finuniver",
+   "text": "закончил Финансовый университет при Правительстве",
+   "intent": "hobby_edu",
+   "lang": "ru",
+   "rationale": "Relevant: pre-NES education at Финансовый университет при Правительстве РФ (~49 profiles).",
+   "family": "hobby_edu"
+  },
+  {
+   "id": "hobbyedu-plekhanov",
+   "text": "выпускники Плехановки",
+   "intent": "hobby_edu",
+   "lang": "ru",
+   "rationale": "Relevant: pre-NES university is РЭУ им. Г.В. Плеханова (colloquial 'Плехановка', ~37 profiles).",
+   "family": "hobby_edu"
+  },
+  {
+   "id": "hobbyedu-mgimo",
+   "text": "кто учился в МГИМО",
+   "intent": "hobby_edu",
+   "lang": "ru",
+   "rationale": "Relevant: pre-NES education at МГИМО МИД России (stored as 'Московский государственный институт международных отношений', ~38 profiles; the acronym must bridge).",
+   "family": "hobby_edu"
+  },
+  {
+   "id": "hobbyedu-bauman",
+   "text": "выпускники Бауманки",
+   "intent": "hobby_edu",
+   "lang": "ru",
+   "rationale": "Relevant: pre-NES university is МГТУ им. Н.Э. Баумана (~71 profiles); the colloquial 'Бауманка' must bridge to the full name.",
+   "family": "hobby_edu"
+  },
+  {
+   "id": "hobbyedu-lse",
+   "text": "studied at LSE before NES",
+   "intent": "hobby_edu",
+   "lang": "en",
+   "rationale": "Relevant: pre-NES education at London School of Economics (~5 profiles); a tiny discriminative set where ranking the real LSE alumni to the top matters.",
+   "family": "hobby_edu"
+  },
+  {
+   "id": "hobbyedu-bocconi",
+   "text": "PhD из Боккони",
+   "intent": "hobby_edu",
+   "lang": "mix",
+   "rationale": "Relevant: alumni affiliated with Università Bocconi / Боккони — in this feed it surfaces as the academic employer 'Коммерческий университет им. Луиджи Боккони' on a small handful (~3) of professor profiles, NOT as a pre-NES degree; ranking those few Bocconi-linked profiles to the top is the test.",
+   "family": "hobby_edu"
+  },
+  {
+   "id": "hobbyedu-lawyers",
+   "text": "юристы по первому образованию",
+   "intent": "hobby_edu",
+   "lang": "ru",
+   "rationale": "Relevant: pre-NES specialty/degree is юриспруденция (law, ~14 profiles), before switching to economics at NES.",
+   "family": "hobby_edu"
+  },
+  {
+   "id": "hobbyedu-spbgu",
+   "text": "выпускники СПбГУ",
+   "intent": "hobby_edu",
+   "lang": "ru",
+   "rationale": "Relevant: pre-NES university is Санкт-Петербургский государственный университет (~34-38 profiles); NOT СПбПУ/Политех or ИТМО.",
+   "family": "hobby_edu"
+  },
+  {
+   "id": "name-grishina-ekaterina",
+   "text": "Найди Екатерину Гришину",
+   "intent": "name-full-name",
+   "lang": "ru",
+   "rationale": "Should return Гришина Екатерина Дмитриевна (nes_id 14880) and NOT the other Гришина, Анна Вячеславовна (nes_id 27); first name disambiguates.",
+   "family": "name"
+  },
+  {
+   "id": "name-goncharov-sergey",
+   "text": "Гончаров Сергей Викторович",
+   "intent": "name-full-name",
+   "lang": "ru",
+   "rationale": "Exactly Гончаров Сергей Викторович (nes_id 926); there are 6 Гончаровых but only one Сергей, so the full name pins the gold to this single person.",
+   "family": "name"
+  },
+  {
+   "id": "name-knobel-aleksandr",
+   "text": "Найди Александра Кнобеля",
+   "intent": "name-full-name",
+   "lang": "ru",
+   "rationale": "Should return Кнобель Александр Юрьевич (nes_id 491); Кнобель is a unique surname in the feed, gold is exactly one person.",
+   "family": "name"
+  },
+  {
+   "id": "name-persiyanov-ivan",
+   "text": "Персиянов Иван",
+   "intent": "name-full-name",
+   "lang": "ru",
+   "rationale": "Should return Персиянов Иван Сергеевич (nes_id 776); Персиянов is a unique surname, gold is exactly one person.",
+   "family": "name"
+  },
+  {
+   "id": "name-bagautdinov-iskandar",
+   "text": "Багаутдинов Искандар",
+   "intent": "name-full-name",
+   "lang": "ru",
+   "rationale": "Should return Багаутдинов Искандар Зульфирович (nes_id 14474); unique surname, single unambiguous match.",
+   "family": "name"
+  },
+  {
+   "id": "name-kheyfets-surname",
+   "text": "Хейфец",
+   "intent": "name-surname-only",
+   "lang": "ru",
+   "rationale": "Surname-only query; should return Хейфец Игорь Леонидович (nes_id 647), the only Хейфец in the feed.",
+   "family": "name"
+  },
+  {
+   "id": "name-postolit-surname",
+   "text": "Постолит",
+   "intent": "name-surname-only",
+   "lang": "ru",
+   "rationale": "Surname-only query; should return Постолит Егор Анатольевич (nes_id 12204), the only Постолит in the feed.",
+   "family": "name"
+  },
+  {
+   "id": "name-pyankov-surname",
+   "text": "Пьянков",
+   "intent": "name-surname-only",
+   "lang": "ru",
+   "rationale": "Surname-only query; should return Пьянков Никита Евгеньевич (nes_id 3112), the only Пьянков in the feed.",
+   "family": "name"
+  },
+  {
+   "id": "name-prosteva-surname",
+   "text": "Простева",
+   "intent": "name-surname-only",
+   "lang": "ru",
+   "rationale": "Surname-only query; should return Простева Евгения Анатольевна (nes_id 3375), the only Простева in the feed.",
+   "family": "name"
+  },
+  {
+   "id": "name-bikbov-translit",
+   "text": "find Ruslan Bikbov",
+   "intent": "name-transliteration",
+   "lang": "mix",
+   "rationale": "English command + Latin transliteration of a Cyrillic name; should return Бикбов Руслан Раилевич (nes_id 3236), the only Бикбов in the feed.",
+   "family": "name"
+  },
+  {
+   "id": "name-yanakidis-translit",
+   "text": "Yanakidis Ioannis",
+   "intent": "name-transliteration",
+   "lang": "en",
+   "rationale": "Latin transliteration; should return Янакидис Иоаннис Спартакович (nes_id 3675) and NOT the other Янакидис, Харис Валерисович (nes_id 2747); the first name Ioannis disambiguates.",
+   "family": "name"
+  },
+  {
+   "id": "name-kamaeva-translit",
+   "text": "Kamaeva Olga",
+   "intent": "name-transliteration",
+   "lang": "en",
+   "rationale": "Latin transliteration; should return Камаева Ольга Олеговна (nes_id 14683), the only Камаева in the feed.",
+   "family": "name"
+  },
+  {
+   "id": "name-nosyrev-translit",
+   "text": "Nosyrev Maxim",
+   "intent": "name-transliteration",
+   "lang": "en",
+   "rationale": "Latin transliteration; should return Носырев Максим Радикович (nes_id 3483), the only Носырев in the feed.",
+   "family": "name"
+  },
+  {
+   "id": "name-korsunov-misspell",
+   "text": "Карсунов Сергей",
+   "intent": "name-misspelled",
+   "lang": "ru",
+   "rationale": "Lightly misspelled surname (о->а: Карсунов for Корсунов); should still return Корсунов Сергей Сергеевич (nes_id 13326), the only Корсунов in the feed; 'Карсунов' matches no real surname.",
+   "family": "name"
+  }
+ ]
+}

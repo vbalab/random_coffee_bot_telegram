@@ -1,0 +1,3 @@
+# Regenerable spot-check artifact (2MB+ of card snippets); rebuilt by run.py.
+review.jsonl
+to_judge.json
