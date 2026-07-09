@@ -6,7 +6,11 @@ from aiogram import BaseMiddleware, Dispatcher
 from aiogram.filters.callback_data import CallbackData
 from aiogram.types import CallbackQuery, InaccessibleMessage, Message
 
-from nespresso.bot.lib.chat.block import CheckIfBlocked, RegisterMessageAndCheckSpam
+from nespresso.bot.lib.chat.block import (
+    CheckIfBlocked,
+    RegisterCallbackAndCheckSpam,
+    RegisterMessageAndCheckSpam,
+)
 from nespresso.bot.lib.message.i18n import GetUserLanguage, t
 from nespresso.bot.lib.message.io import (
     ContextIO,
@@ -49,7 +53,22 @@ class CallbackLoggingMiddleware(BaseMiddleware):
         event: CallbackQuery,  # type: ignore[override]
         data: dict[str, Any],
     ) -> Any:
-        if await CheckIfBlocked(event.from_user.id):
+        chat_id = event.from_user.id
+
+        if await CheckIfBlocked(chat_id):
+            return
+
+        # Callbacks bypassed the spam counter entirely before (only the message
+        # middleware ran it), so a callback flood was unbounded. Run it here too,
+        # with the lenient callback threshold so normal pagination/reaction taps
+        # stay well clear.
+        if RegisterCallbackAndCheckSpam(chat_id):
+            lang = await GetUserLanguage(chat_id)
+            await SendMessage(
+                chat_id=chat_id,
+                text=t(lang, "common.spam_blocked"),
+                context=ContextIO.Blocked,
+            )
             return
 
         if isinstance(event.message, InaccessibleMessage):

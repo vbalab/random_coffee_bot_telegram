@@ -10,7 +10,12 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from nespresso.bot.handlers.admin.commands.back import BackToAdminPanelCallbackData
-from nespresso.bot.lib.chat.block import BlockUser, CheckIfBlocked, UnblockUser
+from nespresso.bot.lib.chat.block import (
+    BlockUser,
+    GetSpamBlockedChatIds,
+    IsSpamBlocked,
+    UnblockUser,
+)
 from nespresso.bot.lib.chat.username import GetTgUsername, ResolveChatIdByUsername
 from nespresso.bot.lib.hub_state import HUB_MESSAGES
 from nespresso.bot.lib.message.i18n import GetUserLanguage, t
@@ -103,7 +108,18 @@ async def BuildBlockingPanelText(lang: str) -> str:
         lines = [await _GetBlockedUserDisplayName(chat_id) for chat_id in blocked_ids]
         blocked_section = "\n".join(f"• {line}" for line in lines)
 
-    return t(lang, "admin.blocking_header", blocked_section=blocked_section)
+    header = t(lang, "admin.blocking_header", blocked_section=blocked_section)
+
+    # Surface in-memory spam-blocks too (they never set TgUser.blocked, so they'd
+    # otherwise be invisible here). Only DB-blocked users are excluded to avoid
+    # listing anyone twice.
+    spam_ids = [cid for cid in GetSpamBlockedChatIds() if cid not in set(blocked_ids)]
+    if spam_ids:
+        spam_lines = [await _GetBlockedUserDisplayName(cid) for cid in spam_ids]
+        spam_section = "\n".join(f"• {line}" for line in spam_lines)
+        header += "\n\n" + t(lang, "admin.blocking_spam_section", spam_section=spam_section)
+
+    return header
 
 
 async def _NotifyAdminsAboutBlocking(
@@ -218,15 +234,21 @@ async def BlockingPanelBlockUsername(message: types.Message, state: FSMContext) 
         await ShowBlockingPanel(message.chat.id)
         return
 
-    blocked = await CheckIfBlocked(chat_id)
+    # Branch on the DB `blocked` flag, NOT CheckIfBlocked: a user who is only
+    # spam-blocked (in-memory, auto-expiring) is NOT yet truly blocked, so
+    # "already blocked" would be a lie and, worse, we'd skip BlockUser and let
+    # the DB flag stay False — the user would auto-unblock when the 1h TTL lapsed.
+    db_blocked = await ctx.GetTgUser(chat_id, TgUser.blocked) or False
     await state.clear()
 
-    if blocked:
+    if db_blocked:
         await SendMessage(
             chat_id=message.chat.id,
             text=t(lang, "admin.blocking_already_blocked", username=username),
         )
     else:
+        # BlockUser sets the DB flag unconditionally, so this makes the block
+        # permanent even for a currently spam-blocked user.
         await BlockUser(chat_id)
         await SendMessage(
             chat_id=message.chat.id,
@@ -280,10 +302,15 @@ async def BlockingPanelUnblockUsername(
         )
         return
 
-    blocked = await CheckIfBlocked(chat_id)
+    # A user can be blocked by the DB flag, by the in-memory spam-block, or both.
+    # Treat ANY of them as "blocked" so the unblock is offered, and UnblockUser
+    # clears BOTH sources — otherwise unblocking a spam-blocked-only user would
+    # report success yet leave them blocked until the 1h spam TTL expired.
+    db_blocked = await ctx.GetTgUser(chat_id, TgUser.blocked) or False
+    spam_blocked = IsSpamBlocked(chat_id)
     await state.clear()
 
-    if not blocked:
+    if not db_blocked and not spam_blocked:
         await SendMessage(
             chat_id=message.chat.id,
             text=t(lang, "admin.blocking_not_blocked", username=username),

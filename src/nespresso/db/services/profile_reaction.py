@@ -16,3 +16,7 @@ class ProfileReactionService:
         self.GetProfileReaction = self.profile_reaction_repo.GetReaction
         self.GetBlockedTargetNesIds = self.profile_reaction_repo.GetBlockedNesIds
         self.GetBlockedChatIdPairs = self.profile_reaction_repo.GetBlockedChatIdPairs
+        self.GetProfileReactionsForUser = self.profile_reaction_repo.GetReactionsForUser
+
+        # --- Delete ---
+        self.DeleteProfileReactionsForUser = self.profile_reaction_repo.DeleteForUser

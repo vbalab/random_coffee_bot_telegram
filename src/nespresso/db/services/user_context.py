@@ -36,6 +36,17 @@ class UserContextService(
             self, profile_reaction_service.profile_reaction_repo
         )
 
+    async def DeleteAccountData(self, chat_id: int, nes_id: int | None) -> None:
+        """
+        Erase all DB rows for a self-service account deletion (GDPR): the user's
+        profile reactions (both directions, via nes_id) plus their TgUser row,
+        message audit log, and match assignments/feedback. The caller separately
+        drops the OpenSearch document. Deletes are idempotent, so a retry after a
+        partial failure completes cleanly.
+        """
+        await self.DeleteProfileReactionsForUser(chat_id, nes_id)
+        await self.DeleteUserAndActivity(chat_id)
+
 
 async def GetUserContextService() -> UserContextService:
     tg_user_repo = TgUserRepository(AsyncSessionLocal)

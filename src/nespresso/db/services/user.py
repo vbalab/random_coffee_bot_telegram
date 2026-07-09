@@ -26,6 +26,8 @@ class UserService:
         self.GetTgChatIdBy = self.tg_user_repo.GetChatIdBy
         self.GetAboutByNesIds = self.tg_user_repo.GetAboutByNesIds
 
+        self.GetMatchDataForUser = self.tg_user_repo.GetMatchDataForUser
+
         # - Nes -
         self.GetNesUsersOnCondition = self.nes_user_repo.GetNesUsersOnCondition
         self.GetNesUser = self.nes_user_repo.GetNesUser
@@ -38,6 +40,8 @@ class UserService:
         self.UpdateTgUser = self.tg_user_repo.UpdateTgUser
 
         # --- Delete ---
+        # - Tg -
+        self.DeleteUserAndActivity = self.tg_user_repo.DeleteUserAndActivity
 
     # --- Create ---
 

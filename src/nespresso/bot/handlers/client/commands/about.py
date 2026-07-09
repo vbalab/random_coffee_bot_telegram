@@ -13,6 +13,7 @@ from nespresso.bot.lib.message.io import ContextIO, SendMessage
 from nespresso.core.configs.title_store import GetTitle
 from nespresso.db.models.tg_user import TgUser
 from nespresso.db.services.user_context import GetUserContextService
+from nespresso.recsys.profile import Profile
 from nespresso.recsys.searching.profile_write import RebuildProfileForBio
 
 router = Router()
@@ -58,6 +59,7 @@ class AboutStates(StatesGroup):
 
 class AboutAction(str, Enum):
     WriteNew = "write_new"
+    Preview = "preview"
     Back = "back"
 
 
@@ -70,12 +72,22 @@ def BuildAboutPanelContent(
 ) -> tuple[str, types.InlineKeyboardMarkup]:
     current = about if about else t(lang, "about.not_set")
     text = t(lang, "about.panel_header", current=current)
+    # Minimal "complete your bio" nudge: only shown when the bio is still empty,
+    # right where the "Write new about" button is, so it's actionable in place.
+    if not about:
+        text += "\n\n" + t(lang, "about.complete_tip")
     keyboard = types.InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 types.InlineKeyboardButton(
                     text=t(lang, "about.button_write_new"),
                     callback_data=AboutCallbackData(action=AboutAction.WriteNew).pack(),
+                )
+            ],
+            [
+                types.InlineKeyboardButton(
+                    text=t(lang, "about.button_preview"),
+                    callback_data=AboutCallbackData(action=AboutAction.Preview).pack(),
                 )
             ],
             [
@@ -104,6 +116,28 @@ async def AboutWriteNewCallback(
         text=t(lang, "about.enter_text"),
     )
     await state.set_state(AboutStates.WriteAbout)
+
+
+@router.callback_query(AboutCallbackData.filter(F.action == AboutAction.Preview))
+async def AboutPreviewCallback(callback_query: types.CallbackQuery) -> None:
+    """Show the user the exact profile card other alumni see for them (the same
+    Profile.DescribeProfile() rendered in Find). Sent as a separate message so the
+    About panel stays put."""
+    assert isinstance(callback_query.message, types.Message)
+    await callback_query.answer()
+
+    chat_id = callback_query.from_user.id
+    lang = await GetUserLanguage(chat_id)
+    ctx = await GetUserContextService()
+
+    nes_id = await ctx.GetTgUser(chat_id, TgUser.nes_id)
+    if nes_id is None:
+        await SendMessage(chat_id=chat_id, text=t(lang, "about.preview_no_profile"))
+        return
+
+    profile = await Profile.FromNesId(nes_id)
+    text = f"{t(lang, 'about.preview_header')}\n\n{profile.DescribeProfile()}"
+    await SendMessage(chat_id=chat_id, text=text, parse_mode="HTML")
 
 
 @router.callback_query(AboutCallbackData.filter(F.action == AboutAction.Back))

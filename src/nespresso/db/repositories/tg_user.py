@@ -1,14 +1,16 @@
 import logging
 from collections.abc import Sequence
-from typing import TypeVar, overload
+from typing import Any, TypeVar, overload
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.exc import IntegrityError, NoResultFound
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql.elements import ColumnElement
 
 from nespresso.core.configs.admin_ids import DEFAULT_ADMIN_IDS
+from nespresso.db.models.match import MatchAssignment, MatchFeedback
+from nespresso.db.models.message import Message
 from nespresso.db.models.tg_user import TgUser
 from nespresso.db.repositories.checking import (
     CheckColumnBelongsToModel,
@@ -164,6 +166,47 @@ class TgUserRepository:
                         out[int(nes_id)] = about
         return out
 
+    async def GetMatchDataForUser(self, chat_id: int) -> list[dict[str, Any]]:
+        """
+        Every match assignment this user took part in (as reacher-out OR as the
+        one they were told to meet), with any feedback response left-joined in.
+        Used by the user's own self-service data export (GDPR).
+
+        Lives here rather than in the match repo only because this change owns
+        the tg_user repo; it is a read-only projection, no business logic.
+        """
+        async with self.session() as session:
+            result = await session.execute(
+                select(
+                    MatchAssignment.round_id,
+                    MatchAssignment.assigner_chat_id,
+                    MatchAssignment.assigned_chat_id,
+                    MatchAssignment.created_at,
+                    MatchFeedback.response,
+                )
+                .outerjoin(
+                    MatchFeedback,
+                    MatchFeedback.assignment_id == MatchAssignment.id,
+                )
+                .where(
+                    or_(
+                        MatchAssignment.assigner_chat_id == chat_id,
+                        MatchAssignment.assigned_chat_id == chat_id,
+                    )
+                )
+                .order_by(MatchAssignment.round_id.desc())
+            )
+            return [
+                {
+                    "round_id": round_id,
+                    "assigner_chat_id": assigner_chat_id,
+                    "assigned_chat_id": assigned_chat_id,
+                    "created_at": created_at,
+                    "response": response,
+                }
+                for round_id, assigner_chat_id, assigned_chat_id, created_at, response in result.all()
+            ]
+
     # ----- Update -----
 
     async def UpdateTgUser(
@@ -197,3 +240,29 @@ class TgUserRepository:
                 raise
 
     # ----- Delete -----
+
+    async def DeleteUserAndActivity(self, chat_id: int) -> None:
+        """
+        Delete the user's TgUser row plus the activity keyed on their chat_id that
+        has NO DB foreign key to cascade it: their `message` audit rows and their
+        `match_assignment` rows (in either direction). `match_feedback` rows are
+        removed automatically by the ON DELETE CASCADE from match_assignment.
+
+        `profile_reaction` is handled separately (its own repo). One transaction so
+        a mid-delete failure can't leave the account half-removed.
+        """
+        async with self.session() as session:
+            await session.execute(
+                delete(Message).where(Message.chat_id == chat_id)
+            )
+            await session.execute(
+                delete(MatchAssignment).where(
+                    or_(
+                        MatchAssignment.assigner_chat_id == chat_id,
+                        MatchAssignment.assigned_chat_id == chat_id,
+                    )
+                )
+            )
+            await session.execute(delete(TgUser).where(TgUser.chat_id == chat_id))
+            await session.commit()
+            logging.info(f"TgUser(chat_id={chat_id}) and activity deleted.")

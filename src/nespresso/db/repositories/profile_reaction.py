@@ -1,6 +1,6 @@
 import logging
 
-from sqlalchemy import select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.sql import func
@@ -77,6 +77,29 @@ class ProfileReactionRepository:
                 f"blocked={blocked}"
             )
 
+    # ----- Delete -----
+
+    async def DeleteForUser(
+        self, rater_chat_id: int, target_nes_id: int | None = None
+    ) -> None:
+        """
+        Remove every reaction row that concerns this user — both the ones they
+        authored (rater_chat_id) and, when their nes_id is known, the ones OTHER
+        users left ON their profile (target_nes_id). Used by account deletion so
+        no reaction outlives the deleted user in either direction.
+        """
+        condition = ProfileReaction.rater_chat_id == rater_chat_id
+        if target_nes_id is not None:
+            condition = or_(condition, ProfileReaction.target_nes_id == target_nes_id)
+
+        async with self.session() as session:
+            result = await session.execute(delete(ProfileReaction).where(condition))
+            await session.commit()
+            logging.info(
+                f"ProfileReaction: deleted {result.rowcount} rows for "
+                f"rater={rater_chat_id} target_nes_id={target_nes_id}"
+            )
+
     # ----- Read -----
 
     async def GetReaction(
@@ -108,6 +131,19 @@ class ProfileReactionRepository:
                 .order_by(ProfileReaction.id.desc())
             )
             return [int(nes_id) for (nes_id,) in result.all()]
+
+    async def GetReactionsForUser(
+        self, rater_chat_id: int
+    ) -> list[ProfileReaction]:
+        """Every reaction/hide row this user authored, newest first. Used by the
+        user's own self-service data export (GDPR)."""
+        async with self.session() as session:
+            result = await session.execute(
+                select(ProfileReaction)
+                .where(ProfileReaction.rater_chat_id == rater_chat_id)
+                .order_by(ProfileReaction.id.desc())
+            )
+            return list(result.scalars().all())
 
     async def GetBlockedChatIdPairs(self) -> set[tuple[int, int]]:
         """
