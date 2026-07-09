@@ -31,6 +31,11 @@ def _WarnIfTruncated(text: str) -> None:
 
 def CreateEmbedding(text: str) -> list[float]:
     _WarnIfTruncated(text)
+    # normalize_embeddings=True is deliberate belt-and-suspenders: the GTE model
+    # already has a 2_Normalize module, but the KNN index uses the default l2 space,
+    # which only ranks like cosine for UNIT vectors — so guaranteeing normalization
+    # here keeps KNN correct even if the model's pipeline ever changes. Do NOT drop
+    # it as "redundant".
     embedding = model.encode(text, normalize_embeddings=True)
 
     return embedding.tolist()

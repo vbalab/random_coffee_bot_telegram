@@ -61,12 +61,6 @@ async def DeleteUserOpenSearch(nes_id: int) -> None:
         logging.info(f"nes_id={nes_id} :: Document not found, nothing to delete.")
 
 
-async def CountOpenSearchDocs() -> int:
-    """Number of documents currently in the index (0 if freshly created/wiped)."""
-    result = await client.count(index=INDEX_NAME)
-    return int(result.get("count", 0))
-
-
 async def PresentDocIds() -> set[int]:
     """
     All nes_ids currently present as documents in the index (empty set if the

@@ -1,29 +1,18 @@
 import logging
-from dataclasses import dataclass
 from enum import Enum
 
 from nespresso.recsys.searching.client import client
-from nespresso.recsys.searching.preprocessing.embedding import CreateEmbedding
 from nespresso.recsys.searching.preprocessing.model import EMBEDDING_LEN
 
 INDEX_NAME = "nes_users"
 
 
-@dataclass
 class DocAttr:
-    text: str
-    embedding: list[float]
+    """Namespace for the unified document field names (`text`, `embedding`)."""
 
     class Field(str, Enum):
         text = "text"
         embedding = "embedding"
-
-    @classmethod
-    def FromText(cls, text: str) -> "DocAttr":
-        return cls(
-            text=text,
-            embedding=CreateEmbedding(text),
-        )
 
 
 # Structured `f_*` fields (stored in _source) for query-filter re-scoring + rerank
@@ -104,9 +93,3 @@ async def EnsureOpenSearchIndex() -> bool:
     await client.indices.create(index=INDEX_NAME, body=create_body)
     logging.info(f"# OpenSearch '{INDEX_NAME}' index created.")
     return True
-
-
-# TODO: remove this later
-async def DeleteOpenSearchIndex() -> None:
-    await client.indices.delete(index=INDEX_NAME)
-    logging.info(f"# OpenSearch '{INDEX_NAME}' index deleted.")

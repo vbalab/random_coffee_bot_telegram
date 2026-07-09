@@ -339,9 +339,6 @@ class ScrollingSearch:
         self.index += 1
         return self._CurrentPage()
 
-    async def FinishScrolling(self) -> None:
-        pass  # No scroll context to clear; the candidate pool is held in memory.
-
 
 SEARCHES: TTLCache[uuid.UUID, ScrollingSearch] = TTLCache(
     maxsize=5000,

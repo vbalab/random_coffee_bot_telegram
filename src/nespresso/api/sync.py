@@ -122,7 +122,6 @@ class SyncReport:
     started_at: datetime | None = None
     duration_s: float = 0.0
     fetched: int = 0  # records returned by the feed (incl. duplicates)
-    unique: int = 0  # distinct nes_ids
     alumni: int = 0  # distinct alumni processed
     upserted: int = 0  # rows written to nes_user
     changed: int = 0  # profiles whose text changed (needed re-embedding)
@@ -202,7 +201,6 @@ async def SyncFromMyNES(trigger: str) -> SyncReport:
 async def _RunSync(report: SyncReport) -> None:
     users = await FetchUsersList()
     report.fetched = len(users)
-    report.unique = len({u.nes_id for u in users})
 
     # Dedupe to one record per alumni nes_id (feed duplicates are identical;
     # non-alumni are not indexed/matched, mirroring the single-user path).
