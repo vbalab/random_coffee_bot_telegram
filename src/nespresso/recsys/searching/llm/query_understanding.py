@@ -42,6 +42,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from nespresso.core.configs.settings import settings
+from nespresso.db.models.nes_user import PROGRAMS
 from nespresso.recsys.searching.llm.alerts import ReportLLMError
 from nespresso.recsys.searching.llm.client import client
 from nespresso.recsys.searching.llm.world_knowledge import WORLD_KNOWLEDGE
@@ -129,20 +130,11 @@ _PROFESSIONAL_SET = {v.casefold() for v in _PROFESSIONAL_EXPERTISE}
 _COUNTRY_EXP_SET = {v.casefold() for v in _COUNTRY_EXPERTISE}
 
 # NES study programs as they appear in the directory feed's `programs[].name`
-# (full Russian names, not codes). The parser maps user phrasing onto these so a
-# `program` filter exact-matches the indexed `f_program` keyword field.
-_PROGRAMS = [
-    "Магистр экономики",
-    "Бакалавр экономики",
-    "Мастер финансов",
-    "Финансы, инвестиции, банки",
-    "Экономика энергетики и природных ресурсов",
-    "Мастер наук по финансам",
-    "Мини-Мастер финансов",
-    "Экономика и анализ данных",
-    "Управление благосостоянием: экспертный уровень",
-    "Мастер наук по экономике энергетики",
-]
+# (full Russian names, not codes). DERIVED from the single source of truth
+# `PROGRAMS` (db.models.nes_user) so the parser's filter vocabulary and the
+# display-side abbreviations can never drift apart. The parser maps user phrasing
+# onto these so a `program` filter exact-matches the indexed `f_program` field.
+_PROGRAMS = list(PROGRAMS)
 _PROGRAM_SET = {v.casefold(): v for v in _PROGRAMS}
 
 

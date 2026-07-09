@@ -7,16 +7,27 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from nespresso.db.base import Base
 
-# Display-side NES program abbreviations (full feed name -> conventional short
-# name from nes.ru). Programs without a standard abbreviation keep their full
-# name. The parser (query_understanding.py) maps the REVERSE for search.
-_PROGRAM_ABBR: dict[str, str] = {
+# The canonical NES study programs: full feed name (as it appears in the
+# directory's `programs[].name`) -> conventional short name from nes.ru. SINGLE
+# source of truth for the program vocabulary — display uses the abbreviation, and
+# the query parser derives its program-filter list from these KEYS
+# (query_understanding._PROGRAMS = list(PROGRAMS)), so the two can no longer drift
+# out of sync. Programs without a standard abbreviation map to their own full name.
+PROGRAMS: dict[str, str] = {
     "Магистр экономики": "МАЭ",
     "Бакалавр экономики": "БАЭ",
     "Мастер финансов": "МИФ",
     "Финансы, инвестиции, банки": "ФИБ",
-    "Экономика и анализ данных": "ЭАД",
+    "Экономика энергетики и природных ресурсов": (
+        "Экономика энергетики и природных ресурсов"
+    ),
+    "Мастер наук по финансам": "Мастер наук по финансам",
     "Мини-Мастер финансов": "Мини-МИФ",
+    "Экономика и анализ данных": "ЭАД",
+    "Управление благосостоянием: экспертный уровень": (
+        "Управление благосостоянием: экспертный уровень"
+    ),
+    "Мастер наук по экономике энергетики": "Мастер наук по экономике энергетики",
 }
 
 
@@ -256,13 +267,13 @@ class NesUser(Base):
         parts: list[str] = []
         for p in self.programs or []:
             if isinstance(p, dict) and p.get("name"):
-                abbr = _PROGRAM_ABBR.get(p["name"], p["name"])
+                abbr = PROGRAMS.get(p["name"], p["name"])
                 year = p.get("year")
                 parts.append(
                     f"{html.escape(str(abbr))}'{year}" if year else html.escape(str(abbr))
                 )
         if not parts and self.program:  # fall back to the derived scalar
-            abbr = _PROGRAM_ABBR.get(self.program, self.program)
+            abbr = PROGRAMS.get(self.program, self.program)
             parts.append(
                 f"{html.escape(str(abbr))}'{self.class_name}"
                 if self.class_name
