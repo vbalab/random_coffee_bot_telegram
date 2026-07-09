@@ -6,6 +6,59 @@ from dataclasses import dataclass
 from nespresso.bot.lib.chat.username import GetTgUsername
 from nespresso.db.services.user_context import GetUserContextService
 
+# Telegram rejects any message over 4096 chars; the send in io.py would swallow
+# the resulting BadRequest and the user would see NO card at all. Render the card
+# comfortably under that, leaving headroom for the trailing ellipsis.
+_MAX_CARD_LEN = 4000
+# The bio is the only free-form, user-controlled field, so it is the realistic
+# overflow source. Cap its ESCAPED length so the About block stays well within the
+# card budget regardless of how much html.escape expands it.
+_MAX_ABOUT_LEN = 3000
+_ELLIPSIS = "…"
+
+
+def _CapEscapedBio(about: str, budget: int) -> str:
+    """Truncate the free-form bio so its HTML-escaped form is at most `budget`
+    chars. The cut is made on the RAW text (before escaping) so it can never split
+    a tag or an entity — raw `about` contains neither. html.escape only ever GROWS
+    a string (e.g. ``<`` → ``&lt;``), so binary-search the raw cut point that
+    keeps the escaped length within budget."""
+    if len(html.escape(about)) <= budget:
+        return about
+
+    lo, hi = 0, len(about)
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        # +1 for the escaped ellipsis ("…" is not special, escapes to itself).
+        if len(html.escape(about[:mid])) + len(_ELLIPSIS) <= budget:
+            lo = mid
+        else:
+            hi = mid - 1
+
+    return about[:lo].rstrip() + _ELLIPSIS
+
+
+def _TruncateHtmlCard(text: str, limit: int) -> str:
+    """Final safety net: keep the rendered HTML card within `limit` chars without
+    producing invalid markup. Every line of the card is independently
+    tag-balanced — SelfDescription/WorkDescription emit whole `<b>…</b>` /
+    `<i>…</i>` pairs per line, the `<code>email</code>` and `<b>About:</b>` lines
+    are self-contained, and the escaped bio carries no tags — so cutting on a
+    newline boundary can never split a tag or leave one unclosed."""
+    if len(text) <= limit:
+        return text
+
+    reserve = len("\n") + len(_ELLIPSIS)
+    cut = text.rfind("\n", 0, limit - reserve)
+    if cut <= 0:
+        # No earlier newline (unreachable in practice: the header/contact lines
+        # always add newlines before any long field). Fall back to a hard cut —
+        # safe here only because such a leading line would be a bounded,
+        # tag-balanced field, not the (already raw-capped) bio.
+        cut = limit - reserve
+
+    return text[:cut].rstrip() + "\n" + _ELLIPSIS
+
 
 @dataclass
 class Profile:
@@ -58,6 +111,12 @@ class Profile:
 
     def DescribeProfile(self) -> str:
         """Profile card as Telegram HTML (sent with parse_mode="HTML")."""
+        # Cap the free-form bio (escaped-length-bounded) so the About block can
+        # never on its own overflow the card — the cut is raw-side, tag/entity-safe.
+        about = self.about
+        if about:
+            about = _CapEscapedBio(about, _MAX_ABOUT_LEN)
+
         text = ""
         text += f"{self.nes_self}\n\n" if self.nes_self else ""
 
@@ -66,8 +125,11 @@ class Profile:
         text += f"<code>{html.escape(self.email)}</code>\n" if self.email else ""
         text += "\n" if self.username or self.email else ""
 
-        text += f"<b>About:</b>\n{html.escape(self.about)}\n\n" if self.about else ""
+        text += f"<b>About:</b>\n{html.escape(about)}\n\n" if about else ""
 
         text += f"{self.nes_work}" if self.nes_work else ""
 
-        return text
+        # Second-layer guard: even with a capped bio, an unusually long directory
+        # profile (many work/education entries) could still overflow — trim on a
+        # tag-safe newline boundary.
+        return _TruncateHtmlCard(text, _MAX_CARD_LEN)

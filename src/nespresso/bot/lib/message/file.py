@@ -29,7 +29,10 @@ def ToJSONText(structure: dict[Any, Any] | list[dict[Any, Any]]) -> str:
 
 
 async def SendTemporaryFileFromText(chat_id: int, text: str) -> None:
-    file_path = DIR_TEMP / f"chat_id_{chat_id}.txt"
+    # uuid-suffixed so two concurrent exports for the same chat_id (a double-tap,
+    # or overlapping admin actions) never share a path — otherwise one's
+    # `finally: os.remove` would delete the file the other is still sending.
+    file_path = DIR_TEMP / f"chat_id_{chat_id}_{uuid.uuid4().hex}.txt"
 
     with open(file_path, "w", encoding="utf-8") as file:
         file.write(text)
