@@ -9,59 +9,138 @@ Used by BOTH sides of the match so they speak the same vocabulary:
 
 Keeping a single source means a query and the profiles it should match are
 enriched against an identical mental model, in both Russian and English.
+
+`INDUSTRY_TAXONOMY` is the single structured source of truth for that shared
+vocabulary: one entry per industry, each carrying its bilingual keyword label and
+its globally-famous exemplar orgs/schools. `WORLD_KNOWLEDGE` (the query-side prompt
+block) is GENERATED from it — add or retune an industry in ONE place and the query
+side follows. `DIRECTORY_KNOWLEDGE` below is the index-side counterpart: the SAME
+taxonomy, but grounded in the organizations/universities that actually appear in
+our directory (frequency-ranked, incl. Russian rebrands). It is kept as curated
+prose rather than generated from the taxonomy on purpose — the enrichment text is
+hashed into the re-embed trigger, so regenerating it would force a full (paid)
+re-index; the two are unified at the vocabulary level (identical industry category
+names) without coupling their exact wording.
 """
 
-WORLD_KNOWLEDGE = """\
-High-frequency / quantitative trading (высокочастотный трейдинг, HFT, квант, \
-маркет-мейкинг, алготрейдинг, low-latency trading, market making, algorithmic \
-trading): XTX Markets, Pinely, Jump Trading, Jane Street, Citadel Securities, \
-Two Sigma, Tower Research, Hudson River Trading (HRT), DRW, Optiver, IMC, \
-Virtu, Maven, G-Research.
+from dataclasses import dataclass
 
-Strategy / management consulting (стратегический консалтинг, управленческий \
-консалтинг, MBB): McKinsey, Boston Consulting Group (BCG), Bain, Oliver Wyman, \
-Roland Berger, Kearney, Strategy&.
 
-Investment banking / capital markets (инвестбанкинг, рынки капитала, M&A, \
-слияния и поглощения): Goldman Sachs, J.P. Morgan, Morgan Stanley, Bank of \
-America, Citi, Barclays, Deutsche Bank, UBS, Credit Suisse, VTB Capital, \
-Sberbank CIB, Renaissance Capital, Aton.
+@dataclass(frozen=True)
+class Industry:
+    """One industry category in the shared taxonomy.
 
-Big-4 audit / advisory (аудит, консалтинг, бухгалтерия): PwC, Deloitte, EY \
-(Ernst & Young), KPMG.
+    `label` is the English category header; `keywords` the bilingual (RU+EN)
+    vocabulary that both the query parser and index-time enrichment must speak;
+    `firms` the globally-famous exemplar orgs/schools; `tail` any trailing
+    non-firm prose (e.g. a catch-all clause).
+    """
 
-Banking / retail & corporate finance (банки, банкинг): Sberbank (Сбербанк), \
-VTB (ВТБ), Tinkoff / T-Bank (Тинькофф, Т-Банк), Alfa-Bank (Альфа-Банк), \
-Raiffeisen, Gazprombank (Газпромбанк), Otkritie, Sovcombank.
+    label: str
+    keywords: str
+    firms: tuple[str, ...]
+    tail: str = ""
 
-Big tech / IT / product / data (технологии, IT, разработка, данные, продукт): \
-Yandex (Яндекс), Google, Meta, Amazon, Microsoft, Apple, OZON, Avito, VK, \
-Wildberries, Sber tech, Nvidia.
 
-Venture capital / private equity (венчур, прямые инвестиции, VC, PE): Sequoia, \
-a16z (Andreessen Horowitz), Accel, Baring Vostok, DST Global, Tiger Global, \
-Runa Capital, Almaz Capital.
+# The shared query-side taxonomy. `WORLD_KNOWLEDGE` is rendered from this, so an
+# edit here is the single place the query side learns a new industry/employer.
+INDUSTRY_TAXONOMY: tuple[Industry, ...] = (
+    Industry(
+        "High-frequency / quantitative trading",
+        "высокочастотный трейдинг, HFT, квант, маркет-мейкинг, алготрейдинг, "
+        "low-latency trading, market making, algorithmic trading",
+        ("XTX Markets", "Pinely", "Jump Trading", "Jane Street",
+         "Citadel Securities", "Two Sigma", "Tower Research",
+         "Hudson River Trading (HRT)", "DRW", "Optiver", "IMC", "Virtu",
+         "Maven", "G-Research"),
+    ),
+    Industry(
+        "Strategy / management consulting",
+        "стратегический консалтинг, управленческий консалтинг, MBB",
+        ("McKinsey", "Boston Consulting Group (BCG)", "Bain", "Oliver Wyman",
+         "Roland Berger", "Kearney", "Strategy&"),
+    ),
+    Industry(
+        "Investment banking / capital markets",
+        "инвестбанкинг, рынки капитала, M&A, слияния и поглощения",
+        ("Goldman Sachs", "J.P. Morgan", "Morgan Stanley", "Bank of America",
+         "Citi", "Barclays", "Deutsche Bank", "UBS", "Credit Suisse",
+         "VTB Capital", "Sberbank CIB", "Renaissance Capital", "Aton"),
+    ),
+    Industry(
+        "Big-4 audit / advisory",
+        "аудит, консалтинг, бухгалтерия",
+        ("PwC", "Deloitte", "EY (Ernst & Young)", "KPMG"),
+    ),
+    Industry(
+        "Banking / retail & corporate finance",
+        "банки, банкинг",
+        ("Sberbank (Сбербанк)", "VTB (ВТБ)",
+         "Tinkoff / T-Bank (Тинькофф, Т-Банк)", "Alfa-Bank (Альфа-Банк)",
+         "Raiffeisen", "Gazprombank (Газпромбанк)", "Otkritie", "Sovcombank"),
+    ),
+    Industry(
+        "Big tech / IT / product / data",
+        "технологии, IT, разработка, данные, продукт",
+        ("Yandex (Яндекс)", "Google", "Meta", "Amazon", "Microsoft", "Apple",
+         "OZON", "Avito", "VK", "Wildberries", "Sber tech", "Nvidia"),
+    ),
+    Industry(
+        "Venture capital / private equity",
+        "венчур, прямые инвестиции, VC, PE",
+        ("Sequoia", "a16z (Andreessen Horowitz)", "Accel", "Baring Vostok",
+         "DST Global", "Tiger Global", "Runa Capital", "Almaz Capital"),
+    ),
+    Industry(
+        "Asset / wealth management & hedge funds",
+        "управление активами, хедж-фонды",
+        ("BlackRock", "Bridgewater", "Fidelity", "PIMCO", "Man Group",
+         "Citadel"),
+    ),
+    Industry(
+        "Central banks / regulation / macro",
+        "центральный банк, макроэкономика, регулирование, ДКП",
+        ("Bank of Russia (ЦБ РФ, Центробанк)", "Federal Reserve (ФРС)", "ECB",
+         "IMF (МВФ)", "World Bank"),
+    ),
+    Industry(
+        "Crypto / blockchain / web3 / DeFi",
+        "крипто, блокчейн, web3, децентрализованные финансы, DeFi",
+        ("Binance", "Coinbase", "Chainalysis"),
+        tail=', and any "DeFi"/"web3" wording',
+    ),
+    Industry(
+        "Top quantitative / economics education",
+        "сильное количественное образование",
+        ("MIT", "Stanford", "Harvard", "Princeton", "LSE", "Oxford", "Cambridge",
+         "MGU / МГУ (Lomonosov)", "MIPT / Физтех", "HSE / ВШЭ", "NES / РЭШ"),
+    ),
+)
 
-Asset / wealth management & hedge funds (управление активами, хедж-фонды): \
-BlackRock, Bridgewater, Fidelity, PIMCO, Man Group, Citadel.
+# Role -> skills trailer (no employer list, so it is not an `Industry` entry).
+_ROLE_EXAMPLES = (
+    "Role -> skills examples: Quant Researcher/Analyst -> statistics, machine "
+    "learning, derivatives, alpha research, эконометрика; Data Scientist -> ML, "
+    "statistics, Python, анализ данных; Portfolio Manager -> asset management, "
+    "investing, управление активами; CFO -> corporate finance, accounting, "
+    "корпоративные финансы; Product Manager -> product strategy, analytics, "
+    "управление продуктом."
+)
 
-Central banks / regulation / macro (центральный банк, макроэкономика, \
-регулирование, ДКП): Bank of Russia (ЦБ РФ, Центробанк), Federal Reserve (ФРС), \
-ECB, IMF (МВФ), World Bank.
 
-Crypto / blockchain / web3 / DeFi (крипто, блокчейн, web3, децентрализованные \
-финансы, DeFi): Binance, Coinbase, Chainalysis, and any "DeFi"/"web3" wording.
+def _RenderIndustry(entry: Industry) -> str:
+    return (
+        f"{entry.label} ({entry.keywords}): "
+        f"{', '.join(entry.firms)}{entry.tail}."
+    )
 
-Top quantitative / economics education (сильное количественное образование): \
-MIT, Stanford, Harvard, Princeton, LSE, Oxford, Cambridge, MGU / МГУ \
-(Lomonosov), MIPT / Физтех, HSE / ВШЭ, NES / РЭШ.
 
-Role -> skills examples: Quant Researcher/Analyst -> statistics, machine \
-learning, derivatives, alpha research, эконометрика; Data Scientist -> ML, \
-statistics, Python, анализ данных; Portfolio Manager -> asset management, \
-investing, управление активами; CFO -> corporate finance, accounting, \
-корпоративные финансы; Product Manager -> product strategy, analytics, \
-управление продуктом."""
+# Query-side world-knowledge block: generated from INDUSTRY_TAXONOMY (+ the role
+# trailer). Rendered as coherent RU+EN prose so the parser can map query terms
+# ("HFT", "XTX", "венчур") onto the right industry / filter.
+WORLD_KNOWLEDGE = "\n\n".join(
+    [_RenderIndustry(entry) for entry in INDUSTRY_TAXONOMY] + [_ROLE_EXAMPLES]
+)
 
 
 # Data-grounded knowledge base of the organizations, universities and roles that
