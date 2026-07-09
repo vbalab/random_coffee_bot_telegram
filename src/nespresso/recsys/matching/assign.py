@@ -126,6 +126,16 @@ async def _EligibleChatIds(ctx: UserContextService) -> list[int]:
     )
 
 
+async def EligibleMatchingChatIds() -> list[int]:
+    """
+    Public accessor for the matching-eligible pool, so the admin statistics
+    report the SAME set the algorithm actually matches over (single source of
+    truth — a divergent copy is exactly how the 'eligible' count drifted before).
+    """
+    ctx = await GetUserContextService()
+    return await _EligibleChatIds(ctx)
+
+
 async def CreateMatching(triggered_by: int) -> dict[int, list[int]]:
     """
     Fetches eligible users, runs asymmetric matching, saves to DB.

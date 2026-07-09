@@ -194,8 +194,11 @@ class AnalyticsRepository:
             total_rounds = (
                 await session.scalar(select(func.count()).select_from(MatchRound)) or 0
             )
+            # Order by id (monotonic), matching MatchRepository.GetLastRound —
+            # created_at can tie at second resolution, so the two "last round"
+            # definitions must not disagree.
             last_round = await session.scalar(
-                select(MatchRound).order_by(MatchRound.created_at.desc()).limit(1)
+                select(MatchRound).order_by(MatchRound.id.desc()).limit(1)
             )
             last_round_date: str = (
                 last_round.created_at.strftime("%Y-%m-%d %H:%M UTC")

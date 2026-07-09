@@ -219,15 +219,9 @@ async def SettingsBackCallback(callback_query: types.CallbackQuery) -> None:
             logging.warning(f"Failed to edit settings→hub for chat_id={chat_id}: {e}")
 
 
-@router.callback_query(HelpCallbackData.filter(F.action == HelpAction.AskHelp))
-async def HelpAskCallback(callback_query: types.CallbackQuery) -> None:
-    assert isinstance(callback_query.message, types.Message)
-    await callback_query.answer()
-
-    chat_id = callback_query.from_user.id
-    lang = await GetUserLanguage(chat_id)
+async def _RelayHelpRequestToAdmins(chat_id: int) -> None:
+    """Notify every admin that this user asked for help (silent to the user)."""
     ctx = await GetUserContextService()
-
     user = await ctx.GetTgUser(chat_id)
     username = f"@{user.username}" if user and user.username else str(chat_id)
 
@@ -238,6 +232,16 @@ async def HelpAskCallback(callback_query: types.CallbackQuery) -> None:
         )
         await SendMessage(chat_id=admin_id, text=notification)
 
+
+@router.callback_query(HelpCallbackData.filter(F.action == HelpAction.AskHelp))
+async def HelpAskCallback(callback_query: types.CallbackQuery) -> None:
+    assert isinstance(callback_query.message, types.Message)
+    await callback_query.answer()
+
+    chat_id = callback_query.from_user.id
+    lang = await GetUserLanguage(chat_id)
+
+    await _RelayHelpRequestToAdmins(chat_id)
     await SendMessage(chat_id=chat_id, text=t(lang, "help.request_sent"))
 
 
@@ -278,9 +282,17 @@ async def HelpBackToHubCallback(callback_query: types.CallbackQuery) -> None:
 @router.message(Command("help"))
 async def HelpCommand(message: types.Message) -> None:
     chat_id = message.chat.id
-    if not await CheckVerified(chat_id):
+    lang = await GetUserLanguage(chat_id)
+
+    if await CheckVerified(chat_id):
+        text, keyboard = BuildHelpCommandPanelContent(lang)
+        await SendMessage(chat_id=chat_id, text=text, reply_markup=keyboard)
         return
 
-    lang = await GetUserLanguage(chat_id)
-    text, keyboard = BuildHelpCommandPanelContent(lang)
-    await SendMessage(chat_id=chat_id, text=text, reply_markup=keyboard)
+    # Unverified — typically stuck at the email step (the enter_email copy points
+    # a user who lost inbox access to /help). Don't expose the hub-reachable help
+    # panel (that would hand an unverified user the hub); just relay the request
+    # to admins so they can help, and leave the user's FSM state untouched so
+    # they can still finish verifying if they regain access.
+    await _RelayHelpRequestToAdmins(chat_id)
+    await SendMessage(chat_id=chat_id, text=t(lang, "help.request_sent"))

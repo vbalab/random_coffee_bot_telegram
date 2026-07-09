@@ -125,11 +125,19 @@ class TgUserRepository:
         elif nes_email is not None:
             condition = TgUser.nes_email == nes_email
 
-        result = await self.GetTgUsersOnCondition(
-            condition=condition,
-            column=TgUser.chat_id,
-        )
-        return int(result[0]) if result else None
+        # A given nes_id / nes_email / username can transiently be shared by more
+        # than one row (an unverified re-registration attempt, a mid-flow race).
+        # Resolve deterministically and prefer the VERIFIED owner, so callers
+        # like Profile.FromNesId never surface a stray unverified row's data.
+        async with self.session() as session:
+            result = await session.execute(
+                select(TgUser.chat_id)
+                .where(condition)
+                .order_by(TgUser.verified.desc(), TgUser.chat_id)
+                .limit(1)
+            )
+            row = result.scalar_one_or_none()
+        return int(row) if row is not None else None
 
     async def GetAboutByNesIds(self, nes_ids: Sequence[int]) -> dict[int, str]:
         """

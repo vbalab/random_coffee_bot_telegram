@@ -14,6 +14,7 @@ from nespresso.bot.lifecycle.creator import bot
 from nespresso.db.models.tg_user import TgUser
 from nespresso.db.services.analytics import GetAnalyticsService
 from nespresso.db.services.user_context import GetUserContextService
+from nespresso.recsys.matching.assign import EligibleMatchingChatIds
 
 router = Router()
 
@@ -267,13 +268,10 @@ async def _BuildActivityStatsText(lang: str) -> str:
 async def _BuildMatchingStatsText(lang: str) -> str:
     ctx = await GetUserContextService()
     verified_ids = await ctx.GetVerifiedTgUsersChatId()
-    eligible_ids = await ctx.GetTgUsersOnCondition(
-        condition=TgUser.verified
-        & ~TgUser.blocked
-        & ~TgUser.matching_paused
-        & TgUser.nes_id.isnot(None),
-        column=TgUser.chat_id,
-    )
+    # Use the SAME eligibility the matcher uses (incl. the `listed` directory
+    # filter) so this count can't overstate the real matching pool by including
+    # verified-but-delisted users.
+    eligible_ids = await EligibleMatchingChatIds()
 
     svc = await GetAnalyticsService()
     ms = await svc.GetMatchingStats()

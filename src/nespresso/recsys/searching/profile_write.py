@@ -17,6 +17,7 @@ import logging
 from nespresso.db.services.user_context import GetUserContextService
 from nespresso.recsys.searching.document import (
     BuildProfileText,
+    DeleteUserOpenSearch,
     UpsertProfileOpenSearch,
 )
 from nespresso.recsys.searching.filtering import StructuredFields
@@ -32,11 +33,26 @@ async def RebuildProfileForBio(nes_id: int, about: str) -> None:
 
     No-op if the user has no directory profile yet (bound to an id not mirrored
     from MyNES). Any indexing failure is logged and swallowed.
+
+    A DELISTED user (``listed=False`` — removed from the MyNES directory, i.e.
+    opted out of discoverability) must NOT be put back into the searchable index
+    just by editing their bio. Their bio is still persisted to ``TgUser.about``
+    (the source of truth), so if they re-appear in the directory the next sync
+    folds it back into a fresh index doc — nothing is lost. Until then we keep
+    them out of search: skip the index write and drop any stale document.
     """
     ctx = await GetUserContextService()
     nes_user = await ctx.GetNesUser(nes_id=nes_id)
     if nes_user is None:
         logging.debug(f"nes_id={nes_id}: no NesUser row; skipping bio re-index.")
+        return
+
+    if not nes_user.listed:
+        logging.info(
+            f"nes_id={nes_id}: delisted (listed=False); bio saved to Postgres but "
+            "not indexed — a re-list re-indexes it via sync."
+        )
+        await DeleteUserOpenSearch(nes_id)
         return
 
     try:

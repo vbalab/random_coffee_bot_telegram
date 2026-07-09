@@ -99,9 +99,18 @@ def LanguageKeyboard() -> ReplyKeyboardMarkup:
     )
 
 
-@router.message(StateFilter(None), Command("start"))
+# No StateFilter: /start restarts from ANY state, so a user stuck mid-registration
+# can always escape (the enter_email copy points them here and to /help). Defined
+# first in this router, so it wins over the free-text state handlers below.
+@router.message(Command("start"))
 async def CommandStart(message: types.Message, state: FSMContext) -> None:
     chat_id = message.chat.id
+
+    # Preserve an active brute-force cooldown across the restart (same as /cancel)
+    # so /start can't be used to wipe the 3-wrong-codes penalty and retry early.
+    data = await state.get_data()
+    cooldown_until = data.get("cooldown_until")
+    await state.clear()
 
     if await GetUserLanguageOrNone(chat_id) is None:
         await SendMessage(
@@ -126,6 +135,8 @@ async def CommandStart(message: types.Message, state: FSMContext) -> None:
         text=t(lang, "start.enter_email"),
     )
     await state.set_state(StartStates.EmailGet)
+    if cooldown_until is not None and time.time() < cooldown_until:
+        await state.set_data({"cooldown_until": cooldown_until})
 
 
 @router.message(StateFilter(StartStates.ChooseLanguage), F.content_type == "text")
@@ -185,7 +196,14 @@ _CODE_SEND_MIN_INTERVAL_SECONDS = 60
 _last_code_sent_at: TTLCache[str, float] = TTLCache(maxsize=10000, ttl=3600)
 
 
-@router.message(StateFilter(StartStates.EmailGet), F.content_type == "text")
+# ~Command lets /help and /start fall through to their own handlers instead of
+# being consumed as an "email" (a NES email never starts with "/"). This is what
+# makes the enter_email copy's "ask for /help" actually reachable mid-flow.
+@router.message(
+    StateFilter(StartStates.EmailGet),
+    F.content_type == "text",
+    ~Command("help", "start"),
+)
 async def CommandStartEmailGet(message: types.Message, state: FSMContext) -> None:
     assert message.text is not None
 
@@ -325,7 +343,13 @@ async def CommandStartEmailGet(message: types.Message, state: FSMContext) -> Non
     await state.set_state(StartStates.EmailConfirm)
 
 
-@router.message(StateFilter(StartStates.EmailConfirm), F.content_type == "text")
+# A verification code is 6 digits and never starts with "/", so let /help and
+# /start escape the confirm step too (see EmailGet above).
+@router.message(
+    StateFilter(StartStates.EmailConfirm),
+    F.content_type == "text",
+    ~Command("help", "start"),
+)
 async def CommandStartEmailConfirm(message: types.Message, state: FSMContext) -> None:
     assert message.text is not None
 
@@ -401,6 +425,11 @@ async def CommandStartEmailConfirm(message: types.Message, state: FSMContext) ->
             f"EmailConfirm: nes_id={nes_id} already claimed by another chat_id; "
             f"rejecting chat_id={chat_id}"
         )
+        # Roll back the nes_id we set just above: the `verified` write failed, so
+        # this row stays unverified but would otherwise keep a dangling duplicate
+        # binding to `nes_id` — which GetChatIdBy could later resolve to instead
+        # of the real verified owner (wrong contact info on their profile card).
+        await ctx.UpdateTgUser(chat_id=chat_id, column=TgUser.nes_id, value=None)
         await SendMessage(
             chat_id=chat_id,
             text=t(lang, "start.email_taken"),
