@@ -2,6 +2,7 @@ import logging
 import math
 import time
 import uuid
+from datetime import date, datetime, timezone
 from enum import Enum
 
 from aiogram import F, Router, types
@@ -35,6 +36,39 @@ router = Router()
 # for everyone else on the bot.
 _SEARCH_COOLDOWN_SECONDS = 3.0
 _last_search_at: TTLCache[int, float] = TTLCache(maxsize=10000, ttl=60)
+
+# Per-user daily search cap. Every Find query fires a PAID ParseQuery + Rerank
+# LLM call, so we bound spend at _DAILY_SEARCH_LIMIT searches per user per (UTC)
+# day. State is (utc_date, count) keyed by chat_id: the first search of a new UTC
+# day resets the count to 0. Backed by a bounded TTLCache so entries for users who
+# stop searching are eventually reclaimed — the daily RESET is DATE-driven
+# (comparing the stored date to today), NOT tied to the TTL, so a heavy user who
+# keeps refreshing the TTL still resets at UTC midnight.
+_DAILY_SEARCH_LIMIT = 60
+_daily_search_count: TTLCache[int, tuple[date, int]] = TTLCache(
+    maxsize=10000, ttl=60 * 60 * 48
+)
+
+
+def _DailySearchLimitReached(chat_id: int) -> bool:
+    """Whether the user has already spent today's search quota. Read-only: it does
+    NOT count the current attempt (the bump happens in _RecordSearch, once a search
+    actually runs). A stored entry from an earlier UTC day counts as a fresh day."""
+    day, count = _daily_search_count.get(chat_id, (None, 0))
+    if day != datetime.now(timezone.utc).date():
+        return False
+    return count >= _DAILY_SEARCH_LIMIT
+
+
+def _RecordSearch(chat_id: int) -> None:
+    """Count one *actual* search against the user's daily quota. Call only once the
+    query is committed to the (paid) pipeline — after the cooldown and length gates
+    — so rejected-empty / too-long / rate-limited inputs never consume quota."""
+    today = datetime.now(timezone.utc).date()
+    day, count = _daily_search_count.get(chat_id, (today, 0))
+    if day != today:
+        count = 0
+    _daily_search_count[chat_id] = (today, count + 1)
 
 
 def PercentageToReduce(token_len: int) -> int:
@@ -138,6 +172,18 @@ async def CommandFindText(message: types.Message, state: FSMContext) -> None:
         return
     _last_search_at[chat_id] = now
 
+    # Daily spend cap (additional to the 3s cooldown above): each query below fires
+    # a PAID ParseQuery + Rerank. Turn an over-quota user away HERE, before any
+    # inference/LLM work. Checked (not counted) — the counter is bumped only once a
+    # real search runs (see _RecordSearch below), so this doesn't self-exhaust.
+    if _DailySearchLimitReached(chat_id):
+        await SendMessage(
+            chat_id=chat_id,
+            text=t(lang, "find.daily_limit"),
+            context=ContextIO.UserFailed,
+        )
+        return
+
     # Off the event loop AND serialized with every other tokenizer/encoder call
     # via the shared single-worker executor — calling CalculateTokenLen directly
     # here would race the same non-thread-safe tokenizer used by the encoder
@@ -154,6 +200,11 @@ async def CommandFindText(message: types.Message, state: FSMContext) -> None:
             context=ContextIO.UserFailed,
         )
         return
+
+    # Committed to the paid pipeline now (cooldown + length gates passed) — count
+    # this against the daily quota. A moderation-rejected query still costs a
+    # ParseQuery call, so it runs the pipeline below and is counted here too.
+    _RecordSearch(chat_id)
 
     searching_message = await SendMessage(
         chat_id=message.chat.id,
@@ -181,11 +232,16 @@ async def CommandFindText(message: types.Message, state: FSMContext) -> None:
             )
 
     if page is None:
+        # Zero results — either a genuine miss or a moderation-rejected query. Keep
+        # the user in the query-entry state (FindStates.Text) and nudge them to
+        # retry, instead of clearing state and dumping them to idle where they'd
+        # have to re-open Find from the hub. Pagination/reactions are callback-driven
+        # and unaffected by staying in this state.
         await SendMessage(
             chat_id=message.chat.id,
-            text=t(lang, "find.not_found"),
+            text=f"{t(lang, 'find.not_found')}\n\n{t(lang, 'find.try_another')}",
         )
-        await state.clear()
+        await state.set_state(FindStates.Text)
         return
 
     search_id = uuid.uuid4()

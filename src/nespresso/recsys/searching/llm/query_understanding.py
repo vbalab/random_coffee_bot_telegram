@@ -480,13 +480,31 @@ def _BuildSystem(cache_1h: bool) -> list[dict[str, Any]]:
     return [{**_SYSTEM_BLOCK, "cache_control": {"type": "ephemeral", "ttl": "1h"}}]
 
 
-# Deterministic slur backstop — used ONLY when the LLM moderator is unavailable
-# (the fallback path), so it can be small and high-precision. Stems chosen to
-# avoid matching innocent words.
+# Deterministic obscenity / slur backstop — used ONLY when the LLM moderator is
+# unavailable (the fallback path), so it stays small and HIGH-PRECISION: every
+# stem is chosen so it cannot appear inside an innocent word (each was checked
+# against common RU/EN vocabulary). Notably we use `бляд`/`блят` not bare `бля`
+# (which hides in "корабля"/"рубля"); `гомик` shares no substring with "экономика";
+# `ублюд` is not in "наблюдать"/"соблюдать"; `проститу` does not match
+# "простите"/"простить"; `еблан` is safe where bare "ебан" would hit "хлебание";
+# the EN stems are word-anchored so `\bcunt\b` won't fire inside "Scunthorpe" and
+# `\bnigg(er|a)\b` won't fire inside "niggardly". This only catches the most
+# egregious queries; the LLM is the real gate.
 _BACKSTOP = re.compile(
-    r"шлюх|бляд|блят|гондон|гандон|пидор|пидар|педик|"
-    r"хуй|хуя|хуё|хуи|пизд|мудак|долбоёб|долбоеб|"
-    r"\bwhore\b|\bslut\b|\bfaggot\b",
+    # --- RU mat / obscenity ---
+    r"шлюх|бляд|блят|гондон|гандон|"
+    r"хуй|хуя|хуё|хуи|пизд|залуп|"
+    r"еблан|уёб|уеб|выеб|"
+    r"мудак|мудил|долбоёб|долбоеб|"
+    # --- RU slurs / degrading ---
+    r"пидор|пидар|пидорас|пидарас|педик|педераст|педрил|гомик|"
+    r"мраз|ублюд|дебил|придур|"
+    # --- RU sexual solicitation ---
+    r"проститу|шалав|"
+    # --- EN obscenity / slurs / solicitation (word-anchored) ---
+    r"fuck|\bcunts?\b|\bwhores?\b|\bsluts?\b|\bbitch(?:es)?\b|"
+    r"\bfaggots?\b|\bnigg(?:er|a)s?\b|\bassholes?\b|"
+    r"\bprostitutes?\b|\brapists?\b",
     re.IGNORECASE,
 )
 
