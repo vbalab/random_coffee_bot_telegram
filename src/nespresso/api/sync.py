@@ -30,7 +30,7 @@ import hashlib
 import logging
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import and_
@@ -173,7 +173,7 @@ async def SyncFromMyNES(trigger: str) -> SyncReport:
         return SyncReport(trigger=trigger, busy=True)
 
     async with _sync_lock:
-        report = SyncReport(trigger=trigger, started_at=datetime.now(timezone.utc))
+        report = SyncReport(trigger=trigger, started_at=datetime.now(UTC))
         start = time.monotonic()
         try:
             await _RunSync(report)

@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
@@ -58,7 +58,7 @@ class MatchRepository:
             await session.execute(
                 update(MatchRound)
                 .where(MatchRound.id == round_id)
-                .values(feedback_sent_at=datetime.now(timezone.utc))
+                .values(feedback_sent_at=datetime.now(UTC))
             )
             await session.commit()
 

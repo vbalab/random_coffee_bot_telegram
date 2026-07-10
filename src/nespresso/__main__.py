@@ -15,7 +15,6 @@ from nespresso.bot.lib.notifications import admin
 from nespresso.bot.lib.notifications.erroring import SetExceptionHandlers
 from nespresso.bot.lib.notifications.pending import ProcessPendingUpdates
 from nespresso.bot.lifecycle.creator import bot, dp
-from nespresso.recsys.searching.llm.client import CloseLLMClient
 from nespresso.bot.lifecycle.menu import SetMenu
 from nespresso.bot.lifecycle.sync_scheduler import (
     StartSyncScheduler,
@@ -28,6 +27,7 @@ from nespresso.db.session import EnsureDB, engine
 from nespresso.recsys.searching.client import CloseOpenSearchClient
 from nespresso.recsys.searching.index import EnsureOpenSearchIndex
 from nespresso.recsys.searching.llm.alerts import SetAdminAlertHook
+from nespresso.recsys.searching.llm.client import CloseLLMClient
 from nespresso.recsys.searching.search_pipeline import EnsureSearchPipeline
 
 

@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import secrets
 from email.message import EmailMessage
@@ -83,7 +82,7 @@ async def TestEmail() -> None:
             f"process='email test' !! Email \"{_EMAIL_ADDRESS}\" is not working "
             "(authentication failed)."
         )
-    except (aiosmtplib.SMTPException, OSError, asyncio.TimeoutError) as e:
+    except (TimeoutError, aiosmtplib.SMTPException, OSError) as e:
         # A transient SMTP/network blip (connect error, timeout, DNS failure) must
         # NOT crash startup before polling — TestEmail is log-only / non-fatal by
         # contract. Only credential errors are actionable; the rest just warn.

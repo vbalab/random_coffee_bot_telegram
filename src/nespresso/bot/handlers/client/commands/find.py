@@ -2,7 +2,7 @@ import logging
 import math
 import time
 import uuid
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from enum import Enum
 
 from aiogram import F, Router, types
@@ -55,7 +55,7 @@ def _DailySearchLimitReached(chat_id: int) -> bool:
     NOT count the current attempt (the bump happens in _RecordSearch, once a search
     actually runs). A stored entry from an earlier UTC day counts as a fresh day."""
     day, count = _daily_search_count.get(chat_id, (None, 0))
-    if day != datetime.now(timezone.utc).date():
+    if day != datetime.now(UTC).date():
         return False
     return count >= _DAILY_SEARCH_LIMIT
 
@@ -64,7 +64,7 @@ def _RecordSearch(chat_id: int) -> None:
     """Count one *actual* search against the user's daily quota. Call only once the
     query is committed to the (paid) pipeline — after the cooldown and length gates
     — so rejected-empty / too-long / rate-limited inputs never consume quota."""
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
     day, count = _daily_search_count.get(chat_id, (today, 0))
     if day != today:
         count = 0
