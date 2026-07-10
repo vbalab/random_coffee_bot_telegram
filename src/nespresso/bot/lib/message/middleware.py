@@ -11,6 +11,7 @@ from nespresso.bot.lib.chat.block import (
     RegisterCallbackAndCheckSpam,
     RegisterMessageAndCheckSpam,
 )
+from nespresso.bot.lib.message.checks import IsUnshared
 from nespresso.bot.lib.message.i18n import GetUserLanguage, t
 from nespresso.bot.lib.message.io import (
     ContextIO,
@@ -37,6 +38,15 @@ class MessageLoggingMiddleware(BaseMiddleware):
             await SendMessage(
                 chat_id=chat_id,
                 text=t(lang, "common.spam_blocked"),
+                context=ContextIO.Blocked,
+            )
+            return
+
+        if await IsUnshared(chat_id):
+            lang = await GetUserLanguage(chat_id)
+            await SendMessage(
+                chat_id=chat_id,
+                text=t(lang, "common.directory_unshared"),
                 context=ContextIO.Blocked,
             )
             return
@@ -69,6 +79,18 @@ class CallbackLoggingMiddleware(BaseMiddleware):
                 text=t(lang, "common.spam_blocked"),
                 context=ContextIO.Blocked,
             )
+            return
+
+        if await IsUnshared(chat_id):
+            # Paused (opted out of directory sharing) — answer with a toast alert
+            # instead of a new message so repeated taps don't spam the chat.
+            lang = await GetUserLanguage(chat_id)
+            try:
+                await event.answer(
+                    t(lang, "common.directory_unshared"), show_alert=True
+                )
+            except Exception:
+                logging.debug("Failed to answer unshared-gate callback", exc_info=True)
             return
 
         if isinstance(event.message, InaccessibleMessage):

@@ -222,6 +222,7 @@
   "common.canceled": "Canceled",
   "common.button_outdated": "This button is outdated. Please use /start to reopen the menu.",
   "common.spam_blocked": "🚫 You've been sending messages too fast. You're temporarily blocked for 1 hour due to spamming — please try again after that.",
+  "common.directory_unshared": "🔒 Your profile is no longer shared in the NES directory, so NESpresso is paused. Re-enable “Show in a class' directory” on my.nes.ru to restore access within an hour.",
   "zero.not_in_command": "You're not in a command right now.\nUse /start to open the menu",
   "zero.not_text_idle": "The bot only works with text messages.\nUse /start to open the menu",
   "zero.not_text_in_state": "The bot only works with text messages\nTry again"
