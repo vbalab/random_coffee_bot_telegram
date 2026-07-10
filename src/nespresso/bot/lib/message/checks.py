@@ -1,5 +1,5 @@
-from nespresso.core.configs.admin_store import IsAdmin
 from nespresso.db.models.tg_user import TgUser
+from nespresso.db.services.admin import IsAdmin
 from nespresso.db.services.user_context import GetUserContextService
 
 

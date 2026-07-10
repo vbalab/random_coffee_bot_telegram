@@ -13,8 +13,8 @@ from nespresso.bot.lib.chat.username import ResolveDisplayName
 from nespresso.bot.lib.message.file import SendTemporaryXlsxFile
 from nespresso.bot.lib.message.i18n import GetUserLanguage, t
 from nespresso.bot.lib.message.io import PersonalMsg, SendMessage, SendMessagesToGroup
-from nespresso.core.configs.admin_store import GetAdminIds
 from nespresso.db.models.match import FeedbackResponse
+from nespresso.db.services.admin import GetAdminIds
 from nespresso.db.services.user_context import GetUserContextService
 from nespresso.recsys.matching.assign import (
     DemoMatching,

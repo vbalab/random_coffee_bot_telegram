@@ -1,3 +1,13 @@
+"""
+DB-backed admin management (admins are stored in ``TgUser.is_admin``).
+
+Moved here from ``core/configs`` to respect the layering rule that ``core`` holds no
+intra-project imports: this module reads/writes through the DB and the user-context
+facade, so it belongs in the service layer. Only the DB-backed *store* moved —
+``DEFAULT_ADMIN_IDS`` (pure data, no imports) stays in ``core/configs/admin_ids.py``;
+those chat_ids are always admins and cannot be removed at runtime.
+"""
+
 from nespresso.core.configs.admin_ids import DEFAULT_ADMIN_IDS
 from nespresso.db.models.tg_user import TgUser
 from nespresso.db.services.user_context import GetUserContextService

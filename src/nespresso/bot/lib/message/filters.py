@@ -1,7 +1,7 @@
 from aiogram import types
 from aiogram.filters import Filter
 
-from nespresso.core.configs.admin_store import IsAdmin
+from nespresso.db.services.admin import IsAdmin
 
 
 class AdminFilter(Filter):

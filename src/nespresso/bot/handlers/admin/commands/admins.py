@@ -20,8 +20,8 @@ from nespresso.bot.lib.message.io import (
     SendMessagesToGroup,
 )
 from nespresso.bot.lifecycle.creator import bot
-from nespresso.core.configs.admin_store import AddAdmin, GetAdminIds, RemoveAdmin
 from nespresso.db.models.tg_user import TgUser
+from nespresso.db.services.admin import AddAdmin, GetAdminIds, RemoveAdmin
 from nespresso.db.services.user_context import GetUserContextService
 
 router = Router()

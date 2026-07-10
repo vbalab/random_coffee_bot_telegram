@@ -10,8 +10,8 @@ from aiogram.types.error_event import ErrorEvent
 
 from nespresso.bot.lib.message.io import ContextIO, SendDocument, SendMessage
 from nespresso.bot.lifecycle.creator import BOT_ID, dp
-from nespresso.core.configs.admin_store import GetAdminIds
 from nespresso.core.configs.paths import PATH_BOT_LOGS
+from nespresso.db.services.admin import GetAdminIds
 
 # At most one "full log dump to every admin" per this window. Without it, any
 # trivially-reproducible uncaught exception (a user just mashing a button) would

@@ -3,8 +3,8 @@ import logging
 from aiogram import types
 
 from nespresso.bot.lib.message.io import SendDocument, SendMessage
-from nespresso.core.configs.admin_store import GetAdminIds
 from nespresso.core.configs.paths import PATH_BOT_LOGS
+from nespresso.db.services.admin import GetAdminIds
 
 
 async def NotifyOnStartup() -> None:
