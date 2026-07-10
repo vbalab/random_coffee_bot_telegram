@@ -1,109 +1,26 @@
 import logging
-from enum import Enum
 
 from aiogram import F, Router, types
-from aiogram.exceptions import TelegramBadRequest
-from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
+from nespresso.bot.handlers.admin.commands.admin import BuildAdminPanelContent
 from nespresso.bot.handlers.admin.commands.back import BackToHubCallbackData
+from nespresso.bot.handlers.client.commands.about import BuildAboutPanelContent
 from nespresso.bot.handlers.client.commands.find import FindStates
-from nespresso.bot.lib.hub_state import HUB_LOCKS, HUB_MESSAGES
+from nespresso.bot.handlers.client.commands.settings import BuildSettingsPanelContent
+from nespresso.bot.handlers.client.hub_view import (
+    HubAction,
+    HubCallbackData,
+    HubKeyboard,
+)
+from nespresso.bot.lib.hub_state import HUB_MESSAGES
 from nespresso.bot.lib.message.i18n import GetUserLanguage, t
 from nespresso.bot.lib.message.io import EditPanel, SendMessage
-from nespresso.bot.lifecycle.creator import bot
 from nespresso.core.configs.title_store import GetTitle
 from nespresso.db.models.tg_user import TgUser
 from nespresso.db.services.user_context import GetUserContextService
 
 router = Router()
-
-
-class HubAction(str, Enum):
-    Find = "find"
-    Admin = "admin"
-    About = "about"
-    Settings = "settings"
-
-
-class HubCallbackData(CallbackData, prefix="hub"):
-    action: HubAction
-
-
-def HubKeyboard(lang: str, is_admin: bool) -> InlineKeyboardMarkup:
-    buttons: list[list[InlineKeyboardButton]] = [
-        [
-            InlineKeyboardButton(
-                text=t(lang, "hub.find_person"),
-                callback_data=HubCallbackData(action=HubAction.Find).pack(),
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text=t(lang, "hub.my_about"),
-                callback_data=HubCallbackData(action=HubAction.About).pack(),
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text=t(lang, "hub.settings"),
-                callback_data=HubCallbackData(action=HubAction.Settings).pack(),
-            )
-        ],
-    ]
-    if is_admin:
-        buttons.append(
-            [
-                InlineKeyboardButton(
-                    text=t(lang, "hub.admin_panel"),
-                    callback_data=HubCallbackData(action=HubAction.Admin).pack(),
-                )
-            ]
-        )
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
-
-
-async def SendHub(chat_id: int) -> None:
-    """Delete the old hub message (if any) and send a fresh one."""
-    # Serialized per chat_id so two concurrent calls can't both act on the same
-    # "old" message and leave an orphaned duplicate hub (see HUB_LOCKS).
-    async with HUB_LOCKS[chat_id]:
-        lang = await GetUserLanguage(chat_id)
-        ctx = await GetUserContextService()
-
-        # Prefer in-memory cache; fall back to DB (survives bot restarts)
-        old_id = HUB_MESSAGES.get(chat_id)
-        if old_id is None:
-            old_id = await ctx.GetTgUser(chat_id, TgUser.panel_message_id)
-
-        if old_id is not None:
-            try:
-                await bot.delete_message(chat_id=chat_id, message_id=old_id)
-            except TelegramBadRequest as e:
-                # Expected & harmless: the old hub is already gone, or older than
-                # Telegram's 48h delete window. One clean line, no traceback.
-                logging.warning(
-                    f"Old hub message not deleted (chat_id={chat_id} "
-                    f"message_id={old_id}): {e.message}"
-                )
-            except Exception:
-                logging.warning(
-                    f"Failed to delete old hub message for chat_id={chat_id} message_id={old_id}",
-                    exc_info=True,
-                )
-
-        is_admin = await ctx.GetTgUser(chat_id, TgUser.is_admin) or False
-        msg = await SendMessage(
-            chat_id=chat_id,
-            text=GetTitle(lang),
-            reply_markup=HubKeyboard(lang, is_admin),
-        )
-        if msg is not None:
-            HUB_MESSAGES[chat_id] = msg.message_id
-            await ctx.UpdateTgUser(
-                chat_id=chat_id, column=TgUser.panel_message_id, value=msg.message_id
-            )
 
 
 async def _IsStalePanel(chat_id: int, message_id: int) -> bool:
@@ -177,9 +94,6 @@ async def HubAdminCallback(callback_query: types.CallbackQuery) -> None:
     if not is_admin:
         return
 
-    # Lazy import to avoid circular dependency
-    from nespresso.bot.handlers.admin.commands.admin import BuildAdminPanelContent
-
     lang = await GetUserLanguage(chat_id)
     text, keyboard = BuildAdminPanelContent(lang)
     await EditPanel(callback_query, text, reply_markup=keyboard)
@@ -198,10 +112,6 @@ async def HubSettingsCallback(callback_query: types.CallbackQuery) -> None:
     ctx = await GetUserContextService()
     matching_paused = await ctx.GetTgUser(chat_id, TgUser.matching_paused) or False
 
-    from nespresso.bot.handlers.client.commands.settings import (
-        BuildSettingsPanelContent,
-    )
-
     text, keyboard = BuildSettingsPanelContent(lang, matching_paused=matching_paused)
     await EditPanel(callback_query, text, reply_markup=keyboard)
 
@@ -218,8 +128,6 @@ async def HubAboutCallback(callback_query: types.CallbackQuery) -> None:
 
     ctx = await GetUserContextService()
     about = await ctx.GetTgUser(chat_id, TgUser.about)
-
-    from nespresso.bot.handlers.client.commands.about import BuildAboutPanelContent
 
     text, keyboard = BuildAboutPanelContent(lang, about)
     await EditPanel(callback_query, text, reply_markup=keyboard)

@@ -6,6 +6,7 @@ from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
+from nespresso.bot.handlers.client.hub_view import HubKeyboard, SendHub
 from nespresso.bot.lib.message.i18n import GetUserLanguage, t
 from nespresso.bot.lib.message.io import ContextIO, EditPanel, SendMessage
 from nespresso.core.configs.title_store import GetTitle
@@ -151,8 +152,6 @@ async def AboutBackCallback(
     ctx = await GetUserContextService()
     is_admin = await ctx.GetTgUser(chat_id, TgUser.is_admin) or False
 
-    from nespresso.bot.handlers.client.commands.hub import HubKeyboard
-
     await EditPanel(
         callback_query,
         GetTitle(lang),
@@ -186,7 +185,5 @@ async def AboutWriteAboutMessage(message: types.Message, state: FSMContext) -> N
         chat_id=chat_id,
         text=t(lang, "about.saved"),
     )
-
-    from nespresso.bot.handlers.client.commands.hub import SendHub
 
     await SendHub(chat_id)

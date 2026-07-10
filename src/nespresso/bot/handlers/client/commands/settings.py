@@ -10,6 +10,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from cachetools import TTLCache
 
+from nespresso.bot.handlers.client.hub_view import HubKeyboard, SendHub
 from nespresso.bot.lib.hub_state import HUB_MESSAGES
 from nespresso.bot.lib.message.checks import CheckVerified
 from nespresso.bot.lib.message.file import SendTemporaryXlsxFile
@@ -491,8 +492,6 @@ async def SettingsBackCallback(callback_query: types.CallbackQuery) -> None:
     ctx = await GetUserContextService()
     is_admin = await ctx.GetTgUser(chat_id, TgUser.is_admin) or False
 
-    from nespresso.bot.handlers.client.commands.hub import HubKeyboard
-
     await EditPanel(
         callback_query,
         GetTitle(lang),
@@ -737,8 +736,6 @@ async def HelpBackToHubCallback(callback_query: types.CallbackQuery) -> None:
         await callback_query.message.delete()
     except TelegramBadRequest as e:
         logging.warning(f"Failed to delete help message for chat_id={chat_id}: {e}")
-
-    from nespresso.bot.handlers.client.commands.hub import SendHub
 
     await SendHub(chat_id)
 

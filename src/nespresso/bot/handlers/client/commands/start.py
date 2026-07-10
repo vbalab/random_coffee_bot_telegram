@@ -21,6 +21,7 @@ from sqlalchemy.exc import IntegrityError
 from nespresso.api.request import EmailLookup, ResolveNesUserByEmail
 from nespresso.bot.handlers.client.commands.about import RejectIfAboutTooLong
 from nespresso.bot.handlers.client.email.verification import CreateCode, SendCode
+from nespresso.bot.handlers.client.hub_view import SendHub
 from nespresso.bot.lib.message.checks import CheckVerified
 from nespresso.bot.lib.message.i18n import (
     GetUserLanguage,
@@ -124,9 +125,6 @@ async def CommandStart(message: types.Message, state: FSMContext) -> None:
     lang = await GetUserLanguage(chat_id)
 
     if await CheckVerified(chat_id=chat_id):
-        # Lazy import to avoid circular dependency with hub
-        from nespresso.bot.handlers.client.commands.hub import SendHub
-
         await SendHub(chat_id)
         return
 
@@ -171,8 +169,6 @@ async def CommandStartChooseLanguage(message: types.Message, state: FSMContext) 
     )
 
     if await CheckVerified(chat_id=chat_id):
-        from nespresso.bot.handlers.client.commands.hub import SendHub
-
         await state.clear()
         await SendHub(chat_id)
         return
@@ -532,8 +528,6 @@ async def StartAboutWriteLater(
             exc_info=True,
         )
 
-    from nespresso.bot.handlers.client.commands.hub import SendHub
-
     await SendHub(callback_query.from_user.id)
 
 
@@ -562,7 +556,5 @@ async def StartAboutNowMessage(message: types.Message, state: FSMContext) -> Non
         chat_id=chat_id,
         text=t(lang, "about.saved"),
     )
-
-    from nespresso.bot.handlers.client.commands.hub import SendHub
 
     await SendHub(chat_id)
