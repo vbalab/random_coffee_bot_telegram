@@ -11,7 +11,7 @@ from nespresso.bot.handlers.admin.commands.back import BackToHubCallbackData
 from nespresso.bot.handlers.client.commands.find import FindStates
 from nespresso.bot.lib.hub_state import HUB_LOCKS, HUB_MESSAGES
 from nespresso.bot.lib.message.i18n import GetUserLanguage, t
-from nespresso.bot.lib.message.io import SendMessage
+from nespresso.bot.lib.message.io import EditPanel, SendMessage
 from nespresso.bot.lifecycle.creator import bot
 from nespresso.core.configs.title_store import GetTitle
 from nespresso.db.models.tg_user import TgUser
@@ -182,13 +182,7 @@ async def HubAdminCallback(callback_query: types.CallbackQuery) -> None:
 
     lang = await GetUserLanguage(chat_id)
     text, keyboard = BuildAdminPanelContent(lang)
-    try:
-        await callback_query.message.edit_text(text=text, reply_markup=keyboard)
-    except TelegramBadRequest as e:
-        if "message is not modified" not in str(e):
-            logging.warning(
-                f"Failed to edit hub→admin panel for chat_id={chat_id}: {e}"
-            )
+    await EditPanel(callback_query, text, reply_markup=keyboard)
 
 
 @router.callback_query(HubCallbackData.filter(F.action == HubAction.Settings))
@@ -209,13 +203,7 @@ async def HubSettingsCallback(callback_query: types.CallbackQuery) -> None:
     )
 
     text, keyboard = BuildSettingsPanelContent(lang, matching_paused=matching_paused)
-    try:
-        await callback_query.message.edit_text(text=text, reply_markup=keyboard)
-    except TelegramBadRequest as e:
-        if "message is not modified" not in str(e):
-            logging.warning(
-                f"Failed to edit hub→settings panel for chat_id={chat_id}: {e}"
-            )
+    await EditPanel(callback_query, text, reply_markup=keyboard)
 
 
 @router.callback_query(HubCallbackData.filter(F.action == HubAction.About))
@@ -234,13 +222,7 @@ async def HubAboutCallback(callback_query: types.CallbackQuery) -> None:
     from nespresso.bot.handlers.client.commands.about import BuildAboutPanelContent
 
     text, keyboard = BuildAboutPanelContent(lang, about)
-    try:
-        await callback_query.message.edit_text(text=text, reply_markup=keyboard)
-    except TelegramBadRequest as e:
-        if "message is not modified" not in str(e):
-            logging.warning(
-                f"Failed to edit hub→about panel for chat_id={chat_id}: {e}"
-            )
+    await EditPanel(callback_query, text, reply_markup=keyboard)
 
 
 @router.callback_query(BackToHubCallbackData.filter())
@@ -257,11 +239,8 @@ async def HubBack(callback_query: types.CallbackQuery, state: FSMContext) -> Non
     lang = await GetUserLanguage(chat_id)
     ctx = await GetUserContextService()
     is_admin = await ctx.GetTgUser(chat_id, TgUser.is_admin) or False
-    try:
-        await callback_query.message.edit_text(
-            text=GetTitle(lang),
-            reply_markup=HubKeyboard(lang, is_admin),
-        )
-    except TelegramBadRequest as e:
-        if "message is not modified" not in str(e):
-            logging.warning(f"Failed to edit back→hub for chat_id={chat_id}: {e}")
+    await EditPanel(
+        callback_query,
+        GetTitle(lang),
+        reply_markup=HubKeyboard(lang, is_admin),
+    )

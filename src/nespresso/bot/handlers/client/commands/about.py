@@ -1,15 +1,13 @@
 import html
-import logging
 from enum import Enum
 
 from aiogram import F, Router, types
-from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
 from nespresso.bot.lib.message.i18n import GetUserLanguage, t
-from nespresso.bot.lib.message.io import ContextIO, SendMessage
+from nespresso.bot.lib.message.io import ContextIO, EditPanel, SendMessage
 from nespresso.core.configs.title_store import GetTitle
 from nespresso.db.models.tg_user import TgUser
 from nespresso.db.services.user_context import GetUserContextService
@@ -155,14 +153,11 @@ async def AboutBackCallback(
 
     from nespresso.bot.handlers.client.commands.hub import HubKeyboard
 
-    try:
-        await callback_query.message.edit_text(
-            text=GetTitle(lang),
-            reply_markup=HubKeyboard(lang, is_admin),
-        )
-    except TelegramBadRequest as e:
-        if "message is not modified" not in str(e):
-            logging.warning(f"Failed to edit about→hub for chat_id={chat_id}: {e}")
+    await EditPanel(
+        callback_query,
+        GetTitle(lang),
+        reply_markup=HubKeyboard(lang, is_admin),
+    )
 
 
 @router.message(AboutStates.WriteAbout, F.content_type == "text")

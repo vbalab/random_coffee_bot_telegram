@@ -1,4 +1,3 @@
-import logging
 from enum import StrEnum
 
 from aiogram import F, Router, types
@@ -28,6 +27,7 @@ from nespresso.bot.lib.message.file import SendTemporaryFileFromText, ToJSONText
 from nespresso.bot.lib.message.i18n import GetUserLanguage, t
 from nespresso.bot.lib.message.io import (
     ContextIO,
+    EditPanel,
     PersonalMsg,
     SendMessage,
     SendMessagesToGroup,
@@ -176,13 +176,7 @@ async def PanelBack(callback_query: types.CallbackQuery, state: FSMContext) -> N
 
     lang = await GetUserLanguage(callback_query.from_user.id)
     text, keyboard = BuildAdminPanelContent(lang)
-    try:
-        await callback_query.message.edit_text(text=text, reply_markup=keyboard)
-    except TelegramBadRequest as e:
-        if "message is not modified" not in str(e):
-            logging.warning(
-                f"Failed to edit back→admin panel for chat_id={callback_query.from_user.id}: {e}"
-            )
+    await EditPanel(callback_query, text, reply_markup=keyboard)
 
 
 # --- Logs ---
@@ -206,13 +200,7 @@ async def PanelMatching(callback_query: types.CallbackQuery) -> None:
     await callback_query.answer()
 
     lang = await GetUserLanguage(callback_query.from_user.id)
-    try:
-        await callback_query.message.edit_text(**ShowMatchingPanel(lang))
-    except TelegramBadRequest as e:
-        if "message is not modified" not in str(e):
-            logging.warning(
-                f"Failed to edit admin→matching panel for chat_id={callback_query.from_user.id}: {e}"
-            )
+    await EditPanel(callback_query, **ShowMatchingPanel(lang))
 
 
 # --- Send All ---

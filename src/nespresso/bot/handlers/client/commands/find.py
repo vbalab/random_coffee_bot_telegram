@@ -15,7 +15,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from cachetools import TTLCache
 
 from nespresso.bot.lib.message.i18n import GetUserLanguage, t
-from nespresso.bot.lib.message.io import ContextIO, SendMessage
+from nespresso.bot.lib.message.io import ContextIO, EditPanel, SendMessage
 from nespresso.db.models.profile_reaction import ReactionKind
 from nespresso.db.models.tg_user import TgUser
 from nespresso.db.services.user_context import GetUserContextService
@@ -270,8 +270,9 @@ async def _RenderProfileView(
     text = search.CurrentText()
     logging.info(f"chat_id={callback_query.from_user.id}  (scroll)  << {text!r}")
 
-    await callback_query.message.edit_text(
-        text=text,
+    await EditPanel(
+        callback_query,
+        text,
         reply_markup=FindKeyboard(
             search_id=search_id,
             prev=search.CanScrollFurtherBackward(),
@@ -401,7 +402,7 @@ async def _HandleBlock(
     if page is None:
         page = await search.ScrollBackward()
     if page is None:
-        await callback_query.message.edit_text(text=t(lang, "find.all_hidden"))
+        await EditPanel(callback_query, t(lang, "find.all_hidden"))
         return
 
     await _RenderProfileView(callback_query, search, search_id)

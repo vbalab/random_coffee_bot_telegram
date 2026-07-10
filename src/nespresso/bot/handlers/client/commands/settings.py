@@ -14,7 +14,7 @@ from nespresso.bot.lib.hub_state import HUB_MESSAGES
 from nespresso.bot.lib.message.checks import CheckVerified
 from nespresso.bot.lib.message.file import SendTemporaryXlsxFile
 from nespresso.bot.lib.message.i18n import GetUserLanguage, SetUserLanguage, t
-from nespresso.bot.lib.message.io import SendMessage
+from nespresso.bot.lib.message.io import EditPanel, SendMessage
 from nespresso.core.configs.title_store import GetTitle
 from nespresso.db.models.tg_user import TgUser
 from nespresso.db.services.user_context import GetUserContextService
@@ -283,13 +283,7 @@ async def SettingsChangeLanguage(callback_query: types.CallbackQuery) -> None:
     text, keyboard = BuildSettingsPanelContent(
         new_lang, matching_paused=matching_paused
     )
-    try:
-        await callback_query.message.edit_text(text=text, reply_markup=keyboard)
-    except TelegramBadRequest as e:
-        if "message is not modified" not in str(e):
-            logging.warning(
-                f"Failed to edit settings language toggle for chat_id={chat_id}: {e}"
-            )
+    await EditPanel(callback_query, text, reply_markup=keyboard)
 
 
 @router.callback_query(SettingsCallbackData.filter(F.action == SettingsAction.Help))
@@ -301,13 +295,7 @@ async def SettingsHelpCallback(callback_query: types.CallbackQuery) -> None:
     lang = await GetUserLanguage(chat_id)
 
     text, keyboard = BuildHelpPanelContent(lang)
-    try:
-        await callback_query.message.edit_text(text=text, reply_markup=keyboard)
-    except TelegramBadRequest as e:
-        if "message is not modified" not in str(e):
-            logging.warning(
-                f"Failed to edit settings→help panel for chat_id={chat_id}: {e}"
-            )
+    await EditPanel(callback_query, text, reply_markup=keyboard)
 
 
 # --- My data & privacy sub-panel ---
@@ -320,14 +308,7 @@ async def SettingsPrivacyCallback(callback_query: types.CallbackQuery) -> None:
 
     lang = await GetUserLanguage(callback_query.from_user.id)
     text, keyboard = BuildPrivacyPanelContent(lang)
-    try:
-        await callback_query.message.edit_text(text=text, reply_markup=keyboard)
-    except TelegramBadRequest as e:
-        if "message is not modified" not in str(e):
-            logging.warning(
-                f"Failed to edit settings→privacy panel for "
-                f"chat_id={callback_query.from_user.id}: {e}"
-            )
+    await EditPanel(callback_query, text, reply_markup=keyboard)
 
 
 @router.callback_query(PrivacyCallbackData.filter(F.action == PrivacyAction.Back))
@@ -341,13 +322,7 @@ async def PrivacyBackCallback(callback_query: types.CallbackQuery) -> None:
     matching_paused = await ctx.GetTgUser(chat_id, TgUser.matching_paused) or False
 
     text, keyboard = BuildSettingsPanelContent(lang, matching_paused=matching_paused)
-    try:
-        await callback_query.message.edit_text(text=text, reply_markup=keyboard)
-    except TelegramBadRequest as e:
-        if "message is not modified" not in str(e):
-            logging.warning(
-                f"Failed to edit privacy→settings for chat_id={chat_id}: {e}"
-            )
+    await EditPanel(callback_query, text, reply_markup=keyboard)
 
 
 async def _ExportMyData(chat_id: int) -> None:
@@ -458,14 +433,7 @@ async def PrivacyDeleteCallback(callback_query: types.CallbackQuery) -> None:
 
     lang = await GetUserLanguage(callback_query.from_user.id)
     text, keyboard = BuildDeleteConfirmContent(lang)
-    try:
-        await callback_query.message.edit_text(text=text, reply_markup=keyboard)
-    except TelegramBadRequest as e:
-        if "message is not modified" not in str(e):
-            logging.warning(
-                f"Failed to edit privacy→delete-confirm for "
-                f"chat_id={callback_query.from_user.id}: {e}"
-            )
+    await EditPanel(callback_query, text, reply_markup=keyboard)
 
 
 @router.callback_query(
@@ -477,14 +445,7 @@ async def PrivacyDeleteCancelCallback(callback_query: types.CallbackQuery) -> No
 
     lang = await GetUserLanguage(callback_query.from_user.id)
     text, keyboard = BuildPrivacyPanelContent(lang)
-    try:
-        await callback_query.message.edit_text(text=text, reply_markup=keyboard)
-    except TelegramBadRequest as e:
-        if "message is not modified" not in str(e):
-            logging.warning(
-                f"Failed to edit delete-confirm→privacy for "
-                f"chat_id={callback_query.from_user.id}: {e}"
-            )
+    await EditPanel(callback_query, text, reply_markup=keyboard)
 
 
 @router.callback_query(
@@ -532,14 +493,11 @@ async def SettingsBackCallback(callback_query: types.CallbackQuery) -> None:
 
     from nespresso.bot.handlers.client.commands.hub import HubKeyboard
 
-    try:
-        await callback_query.message.edit_text(
-            text=GetTitle(lang),
-            reply_markup=HubKeyboard(lang, is_admin),
-        )
-    except TelegramBadRequest as e:
-        if "message is not modified" not in str(e):
-            logging.warning(f"Failed to edit settings→hub for chat_id={chat_id}: {e}")
+    await EditPanel(
+        callback_query,
+        GetTitle(lang),
+        reply_markup=HubKeyboard(lang, is_admin),
+    )
 
 
 # --- Hidden profiles (per-user profile blocks from Find) ---
@@ -624,16 +582,11 @@ async def _RenderHiddenProfiles(
     blocked_nes_ids = await ctx.GetBlockedTargetNesIds(chat_id)
 
     if not blocked_nes_ids:
-        try:
-            await callback_query.message.edit_text(
-                text=t(lang, "settings.hidden_empty"),
-                reply_markup=_HiddenProfilesEmptyKeyboard(lang),
-            )
-        except TelegramBadRequest as e:
-            if "message is not modified" not in str(e):
-                logging.warning(
-                    f"Failed to render empty hidden-profiles for chat_id={chat_id}: {e}"
-                )
+        await EditPanel(
+            callback_query,
+            t(lang, "settings.hidden_empty"),
+            reply_markup=_HiddenProfilesEmptyKeyboard(lang),
+        )
         return
 
     index = max(0, min(index, len(blocked_nes_ids) - 1))
@@ -645,17 +598,12 @@ async def _RenderHiddenProfiles(
         f"<code>{label}</code>\n\n"
         f"{profile.DescribeProfile()}"
     )
-    try:
-        await callback_query.message.edit_text(
-            text=text,
-            reply_markup=_HiddenProfilesKeyboard(lang, index, len(blocked_nes_ids)),
-            parse_mode="HTML",
-        )
-    except TelegramBadRequest as e:
-        if "message is not modified" not in str(e):
-            logging.warning(
-                f"Failed to render hidden-profiles for chat_id={chat_id}: {e}"
-            )
+    await EditPanel(
+        callback_query,
+        text,
+        reply_markup=_HiddenProfilesKeyboard(lang, index, len(blocked_nes_ids)),
+        parse_mode="HTML",
+    )
 
 
 @router.callback_query(
@@ -724,13 +672,7 @@ async def HiddenProfilesBack(callback_query: types.CallbackQuery) -> None:
     # Hidden profiles now lives under the "My data & privacy" sub-panel, so Back
     # returns there (not straight to the top-level Settings panel).
     text, keyboard = BuildPrivacyPanelContent(lang)
-    try:
-        await callback_query.message.edit_text(text=text, reply_markup=keyboard)
-    except TelegramBadRequest as e:
-        if "message is not modified" not in str(e):
-            logging.warning(
-                f"Failed to edit hidden-profiles→privacy for chat_id={chat_id}: {e}"
-            )
+    await EditPanel(callback_query, text, reply_markup=keyboard)
 
 
 async def _RelayHelpRequestToAdmins(chat_id: int) -> None:
@@ -782,11 +724,7 @@ async def HelpBackCallback(callback_query: types.CallbackQuery) -> None:
     matching_paused = await ctx.GetTgUser(chat_id, TgUser.matching_paused) or False
 
     text, keyboard = BuildSettingsPanelContent(lang, matching_paused=matching_paused)
-    try:
-        await callback_query.message.edit_text(text=text, reply_markup=keyboard)
-    except TelegramBadRequest as e:
-        if "message is not modified" not in str(e):
-            logging.warning(f"Failed to edit help→settings for chat_id={chat_id}: {e}")
+    await EditPanel(callback_query, text, reply_markup=keyboard)
 
 
 @router.callback_query(HelpCallbackData.filter(F.action == HelpAction.BackToHub))
